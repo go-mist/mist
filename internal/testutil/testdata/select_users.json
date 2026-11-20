@@ -1,0 +1,4 @@
+{
+  "sql": "select \"id\", \"name\" from \"users\" where \"id\" = $1 and \"name\" = $2",
+  "params": [1, "alice"]
+}

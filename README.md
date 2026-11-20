@@ -2,7 +2,7 @@
 
 > 用 Go 复刻 [drizzle-orm](https://github.com/drizzle-team/drizzle-orm) 的设计 —— 保留 SQL 语感，把类型安全交给代码生成。
 
-**状态：设计阶段**。当前仓库只有一个 `go.mod`，本文档与 [ROADMAP.md](./ROADMAP.md) 描述的是**目标形态**，不是既有能力。所有 `Features` 章节的条目目前状态均为「设计」。
+**状态：M0 已完成（2026-11-17）**。SQL 片段层、渲染器与 pg 方言的转义函数已经落地并通过测试，其余仍是设计。`Features` 章节逐条标注状态，不夸大能力。
 
 任务排期与验收标准见 [ROADMAP.md](./ROADMAP.md)。
 
@@ -127,22 +127,20 @@ rc.5 通篇在做 JavaScript 侧的运行期优化：
 - `chunkKinds` 数字化分派 + 原型上的 `Symbol` 缓存 + `WeakMap` 构造器表，绕开字符串比较
 - `useJitMappers` 用 `new Function` **运行时生成行映射代码**
 
-V8 优化之后由 `new Function` 生成的映射器，很可能比 Go 的反射映射**更快**。因此：
+扫描不走反射，也不模仿 `new Function`。生成的 `scanUser` 和手写 `rows.Scan(&u.ID, ...)` 是同一次调用。整行扫描的 allocs/op 必须与这段手写代码相同，见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
 
-> 单条查询构建的稳态性能，drizzle-go 大概率是**打平或略输**，因为它没有 JIT 这条路。
+查询构建没有 JIT。相对一个已经热身的 Node 进程，稳态 QPS 不是这个库相对 drizzle 的卖点。相对 gorm / bun，热路径不反射是设计约束：做不到这一点，这个库就没有单独存在的理由。
 
-Go 真正赢的只有两条，且都不是「更快」，而是「更省」：
+Go 相对 Node 仍然多出来的是部署形态，不是单条 SQL 的构建速度：
 
 - **冷启动** —— 毫秒级 vs 秒级
 - **内存基线** —— 几 MB vs 几十 MB 的堆占用
-
-对一个已经跑着长驻 Node 服务的项目，迁到 Go 换来的主查询 QPS 提升可能接近于零。**性能不是这个项目的立项理由。**
 
 ---
 
 ## Features
 
-图例：`设计` = 已规划未开工 · `实现中` = 正在开发 · `已支持` = 可用。当前全部为 `设计`。
+图例：`设计` = 已规划未开工 · `实现中` = 正在开发 · `已支持` = 可用。当前 M0 涉及的条目为「已支持」，其余为「设计」。
 
 ### Schema 定义
 
@@ -157,11 +155,11 @@ Go 真正赢的只有两条，且都不是「更快」，而是「更省」：
 
 | 特性 | 状态 | 说明 |
 |---|---|---|
-| `Chunk` 模型 | 设计 | `s` 串片段 / 列引用 / 参数 / 占位符 / 子查询 / 表 / 别名 的统一表示 |
-| `sql` 模板的 Go 等价物 | 设计 | `sql.S("select * from ", Users, " where ", eq(...))` 形式的显式拼接 |
-| 参数编号与方言化 | 设计 | pg `$1`、mysql `?`、mssql `@p1` 由方言决定 |
-| 内联参数模式 | 设计 | 用于调试输出与 DDL |
-| Golden test 对齐 | 设计 | 同一份 fixture 在 drizzle 与 drizzle-go 上输出逐字节相同的 SQL |
+| `Chunk` 模型 | 已支持 | 片段 / 标识符 / 参数 / 占位符 / 别名 / 子查询 / 多行值 / 列表的统一表示（列与表随 M1 接入） |
+| `sql` 模板的 Go 等价物 | 已支持 | `sql.S(sql.Raw("select * from "), Users, ...)`；**裸字符串按参数绑定**，字面量用 `Raw` |
+| 参数编号与方言化 | 已支持 | pg `$1` 已实现；mysql `?`、mssql `@p1` 随方言 M8 / M9 接入 |
+| 内联参数模式 | 已支持 | 用于调试输出与 DDL，`SQLToQueryInline` |
+| Golden test 对齐 | 实现中 | fixture 加载与逐字节比对已就绪；TS 侧 runner 未建 |
 
 ### 查询构建器
 
@@ -187,7 +185,7 @@ Go 真正赢的只有两条，且都不是「更快」，而是「更省」：
 | 数据化 `where` | 设计 | 对齐 rc.5：不是回调，是数据对象；`RAW` 是唯一的 SQL 逃生口 |
 | 聚合排序 | 设计 | `desc(count)`、`asc(max)` 这类跨关系聚合排序 |
 | `basic` / `optimized` 两种 strategy | 设计 | 具体语义在 M5 开工前出 ADR 定稿 |
-| 嵌套结果映射 | 设计 | 默认反射映射到目标 struct，可选用 codegen 生成映射器 |
+| 嵌套结果映射 | 设计 | 生成扫描函数，不走反射。关系查询不得改变 `Select[T]` 的形状 |
 
 ### 类型映射（Codecs）
 
@@ -260,10 +258,10 @@ Go 真正赢的只有两条，且都不是「更快」，而是「更省」：
 ## 设计原则
 
 1. **SQL 优先。** 你写的东西要能一眼看出它会变成什么 SQL。做不到的抽象就不要。
-2. **类型来自代码生成，不来自反射。** 反射只允许出现在两处：结果行映射、以及 codegen 加速不了的自定义场景。
-3. **显式优于隐式。** 没有隐式查询、没有隐式事务、没有隐式迁移。
+2. **类型来自代码生成，不来自反射。** 热路径不反射：构建不读 schema，扫描调用生成的字段地址。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
+3. **显式优于隐式。** 没有隐式查询、没有隐式事务、没有隐式迁移，也不按零值猜测字段写了没有。
 4. **方言 = 三个 escape 函数 + 若干 build 函数。** 任何让方言接口膨胀的设计都要重新考虑。
-5. **单向数据流。** `schema → 描述符 → chunks → (SQL string, args)`。不允许反向依赖。
+5. **单向数据流。** `schema → 描述符与扫描函数 → chunks → (SQL string, args) → 生成的扫描`。不允许反向依赖。
 6. **不为自己留包袱。** 新项目没有兼容义务，历史遗留形式一律不引入。
 7. **诚实标注状态。** 文档不夸大能力，「设计」不写成「已支持」。
 
@@ -271,7 +269,7 @@ Go 真正赢的只有两条，且都不是「更快」，而是「更省」：
 
 ## 目标 API（草案）
 
-> 以下全部是**设计稿**，最终形态会在对应里程碑开工前以 ADR 定稿。写在这里是为了说明设计意图，不是承诺。
+> schema 输入、查询链和扫描方式已由 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)、[ADR-0003](./docs/adr/0003-zero-and-unset.md)、[ADR-0004](./docs/adr/0004-schema-source.md) 定稿。关系查询仍是草案。这些 API 还没实现。
 
 ### Schema
 
@@ -282,39 +280,43 @@ package schema
 //go:generate go run github.com/xbmlz/drizzle-go/cmd/drizzle-go generate
 
 type User struct {
-	ID        int64     `drizzle:"id,bigserial,primary"`
+	ID        int64     `drizzle:"id,bigserial,pk"`
 	Name      string    `drizzle:"name,text,notnull"`
 	Email     string    `drizzle:"email,text,notnull,unique"`
-	CreatedAt time.Time `drizzle:"created_at,timestamptz,default=now()"`
+	CreatedAt time.Time `drizzle:"created_at,timestamptz,notnull,default=now()"`
 }
 
+func (User) Table() pg.TableMeta { return pg.TableMeta{Name: "users"} }
+
 type Post struct {
-	ID       int64  `drizzle:"id,bigserial,primary"`
+	ID       int64  `drizzle:"id,bigserial,pk"`
 	AuthorID int64  `drizzle:"author_id,bigint,notnull,references=users.id"`
 	Title    string `drizzle:"title,text,notnull"`
 }
+
+func (Post) Table() pg.TableMeta { return pg.TableMeta{Name: "posts"} }
 ```
 
-`go generate` 产出同包的 `schema_gen.go`：`Users`、`Posts` 两个表描述符，以及 `Users.Name` 这类列引用。
+`go generate` 产出同包的 `schema_gen.go`：`Users`、`Posts`，列引用 `Users.Name`（`Col[User, string]`），以及整行扫描函数 `scanUser`。运行时不读 tag。
 
 ### 查询构建
 
 ```go
-rows, err := db.Select().
+rows, err := db.Select(Users.ID, Users.Name).
 	From(Users).
-	Where(and(
-		eq(Users.Name, "alice"),
-		gt(Users.ID, 100),
+	Where(op.And(
+		op.Eq(Users.Name, "alice"),
+		op.Gt(Users.ID, 100),
 	)).
-	OrderBy(desc(Users.CreatedAt)).
+	OrderBy(op.Desc(Users.CreatedAt)).
 	Limit(10).
 	All(ctx)
 ```
 
-生成的 SQL：
+`From(Users)` 把行类型定成 `User`，`All` 返回 `[]User`。生成的 SQL：
 
 ```sql
-select "users"."id", "users"."name", "users"."email", "users"."created_at"
+select "users"."id", "users"."name"
 from "users"
 where "users"."name" = $1 and "users"."id" > $2
 order by "users"."created_at" desc
@@ -327,10 +329,13 @@ limit $3
 
 ```go
 db.Insert(Users).
-	Values(User{Name: "alice", Email: "a@example.com"}).
+	Columns(Users.Name, Users.Email).
+	Values("alice", "a@example.com").
 	OnConflictDoNothing().
 	Returning(Users.ID, Users.CreatedAt)
 ```
+
+未列入 `Columns` 的列不出现在语句里，交给数据库默认值。列清单里的零值会照写。
 
 ```sql
 insert into "users" ("name", "email") values ($1, $2)
@@ -386,7 +391,7 @@ internal/testutil golden 测试与对拍工具
 
 | 概念 | drizzle-orm (rc.5) | drizzle-go |
 |---|---|---|
-| SQL 片段 | `` sql`...` `` 模板标签 | `sql.S(...)` 显式拼接 |
+| SQL 片段 | `` sql`...` `` 模板标签 | `sql.S(sql.Raw("..."), ...)` 显式拼接 |
 | 原始字符串 | `sql.raw()` | `sql.Raw(...)` |
 | 参数 | `Param` | `sql.Param` |
 | 列引用 | column chunk | 生成包里的列描述符 |

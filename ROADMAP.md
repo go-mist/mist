@@ -3,7 +3,7 @@
 本文档是 drizzle-go 的实施计划。**Why / Features 见 [README.md](./README.md)。**
 
 - 参考基准：**drizzle-orm v1.0.0-rc.5**（793 个 `.ts` 文件，约 109,555 行）
-- 当前状态：**M0 未开工**，仓库只有 `go.mod`
+- 当前状态：**M0 已完成**。查询语法、零值、schema 真相源已由 ADR-0002 / 0003 / 0004 定稿，M1 未开工
 - 排期单位：**人周**，按单人全职粗估，只用于判断量级，不是承诺
 
 ---
@@ -92,7 +92,7 @@
 
 ### M0 地基：SQL 片段层与渲染器
 
-**状态**：未开工 · **粗估**：2 – 3 周 · **依赖**：无
+**状态**：已完成（2026-11-17）· **粗估**：2 – 3 周 · **依赖**：无
 
 #### 目标
 
@@ -102,31 +102,59 @@
 
 | 包 / 类型 | 内容 |
 |---|---|
-| `entity/` | 运行时类型判断（`entityKind` 的 Go 等价物 —— 用接口 + 类型断言，不用字符串标签） |
-| `sql/chunk.go` | `Chunk` 接口，实现者：`Fragment` / `Raw` / `Param` / `Placeholder` / `Name` / `ColumnRef` / `TableRef` / `Alias` / `Subquery` / `ValueRows` |
-| `sql/sql.go` | `SQL` 结构体（持有 `[]Chunk`）、`S(...)` 显式拼接、`Raw(s)`、`Join(chunks, sep)` |
-| `sql/render.go` | 渲染入口 `Render(sql SQL, cfg RenderConfig) (query string, args []any)` |
-| `sql/dialect/` | `Dialect` 接口定义 |
-| `pg/dialect.go` | `escapeName` / `escapeParam` / `escapeString` 的 pg 实现 |
-| `internal/testutil` | golden 文件加载与比对 |
+| `entity/` | `Kind`（`entityKind` 的 Go 等价物）与 `String()`；类型身份交给编译器，`Kind` 只承载“分派结果” |
+| `sql/chunk.go` | `Chunk` 接口（契约为 `GetSQL() *SQL`）、`Fragment` / `Name` / `Param` / `Placeholder` / `Alias` / `Subquery` / `ValueRows` / `List` / `Encoder`、渲染器与 `FillPlaceholders` |
+| `sql/sql.go` | `SQL` 结构体（持有 `[]Chunk`）、`S(...)`、`Raw`、`Empty`、`Join`、`Identifier`、`NewParam`、`NewPlaceholder`、`NewSubquery`、`ListOf` |
+| `sql/condition.go` | `And` / `Or` / `Not`（对应 rc.5 `sql/expressions/conditions.ts` 里不依赖列类型的三个组合子） |
+| `sql/dialect/` | `Dialect` 接口：`EscapeName` / `EscapeParam` / `EscapeString` |
+| `pg/dialect.go` | pg 的三个转义函数 + `SQLToQuery` / `SQLToQueryInline` |
+| `internal/testutil` | golden fixture 加载与逐字节比对 |
+| `sql/bench_test.go` | 渲染基准（bind / inline / nested 三组） |
+
+> 列与表的 chunk（`Column` / `Table` / `View`）不在 M0：它们随 schema 一起在 M1 出现。
+> 渲染器已经为它们留出分支位置，M1 只需插入 `case`，不改分派结构。
 
 #### 关键设计决策
 
 - **参数编号由渲染器持有，不是由 chunk 持有。** 对应 rc.5 的 `out` + `params` 累加结构：渲染过程中维护一个单调递增的计数器，每个 `Param` chunk 在渲染时取号。
 - **`Fragment` 与 `Raw` 必须分开。** rc.5 的 `Chunk` 类型允许裸 `string`，但运行时把它当参数绑定处理 —— 这是类型在说谎。Go 侧不做这个妥协。
-- **`RenderConfig` 携带**：`EscapeName`、`EscapeParam`、`EscapeString`、`Codecs`（M4 之前为 nil）、`InlineParams bool`、`Tagged bool`。
+- **裸字符串按参数绑定。** Go 没有模板字符串，`S(...)` 无法区分字面量与插值；默认按参数绑定，字面量必须显式 `Raw("...")`。理由与取舍见 [ADR-0001](./docs/adr/0001-chunk-model.md)。
+- **方言是接口，不是回调字段。** `Render(query, dialect, cfg)`：`RenderConfig` 只带 `ParamStart int` 与 `InlineParams bool`，三个转义函数由 `dialect.Dialect` 提供。
+- **不移植 `tagged` 与 `invokeSource`。** 前者是 Bun.SQL 的缓存优化，后者是 mssql / drizzle-kit 的分派开关；等有真实需求再加。
+- **nil 有两种含义。** `S(..., nil)` 是缺失（跳过），`NewParam(nil, nil)` 是绑定 NULL；`(*SQL)(nil)` 由 `isNilChunk` 统一当缺失处理。
 
 #### 验收标准
 
-1. `sql.S("select ", col, " from ", tbl, " where ", param)` 能产出 `select "users"."id" from "users" where $1` 且 `args == ["x"]`
-2. 空片段（`""`）与 nil 参数被跳过，不产生 `$` 空洞 —— 对齐 rc.5 `sql`  tag 的 `if (strings[0])` / `if (param !== undefined)` 语义
-3. 内联模式产出可直接粘进 psql 的字符串（字符串转义、数字不转义）
-4. golden 用例覆盖：嵌套子查询、`ValueRows` 多行 values、别名、`Placeholder` 命名参数
-5. `bench` 目录有构建基准，记录 chunk 树的分配次数
+1. `sql.S(sql.Raw("select "), sql.Identifier("id"), sql.Raw(" from "), sql.Identifier("users"), sql.Raw(" where "), sql.Identifier("id"), sql.Raw(" = "), sql.NewParam("x", nil))` 产出 `select "id" from "users" where "id" = $1` 且参数为 `["x"]`
+2. 空片段与 nil / typed-nil 参数被跳过，不产生 `$` 空洞 —— 对齐 rc.5 `sql` 标签的 `if (strings[0])` / `if (param !== undefined)` 语义
+3. 内联模式产出可直接粘进 psql 的字符串（字符串按 `escapeString` 转义、数字不转义、nil 为 `null`）
+4. golden 覆盖：嵌套子查询、`ValueRows` 多行 values、别名；`Placeholder` 与 `And` / `Or` / `Not` 由单元测试覆盖（占位符的参数是对象，不适合逐字节 golden）
+5. `sql/bench_test.go` 有三组渲染基准，记录每次渲染的分配次数
+
+#### 测试与覆盖率
+
+drizzle-orm 自身没有发布覆盖率阈值（`drizzle-orm/vitest.config.ts` 只开了 typecheck），
+所以「覆盖率对齐」按两层执行：
+
+1. **用例级对齐**：上游 `drizzle-orm/tests/sql-builder.test.ts` 的每个用例在
+   `sql/condition_test.go` 里有同名对应（`TestSqlBuilder...`）；`is.test.ts` 的运行时类型判断
+   在 Go 里退化为类型断言，由 `entity` 的值域测试覆盖。
+2. **包级下限**（`go test ./... -cover`，数值为 2026-11-17 的实测）：
+
+| 包 | 覆盖下限 | 实测 |
+|---|---|---|
+| `entity` | ≥ 95% | 100.0% |
+| `sql` | ≥ 95% | 97.8% |
+| `pg` | ≥ 95% | 100.0% |
+| `internal/testutil` | ≥ 70%（测试基建，错误分支按需覆盖） | 74.3% |
+| `sql/dialect` | 仅接口，无语句 | — |
+
+未覆盖的部分主要是“无法在 Go 里构造的失败路径”（例如测试基建自身读文件失败）。
+新增代码不允许把下限拉低；若确有必要，在本节说明原因。
 
 #### 主要风险
 
-- Go 的接口 + 类型断言分派可能比 TS 的构造器 `WeakMap` 慢。**接受**，见 README 的「不要拿性能当卖点」。若基准显示严重退化，再考虑给 chunk 加一个 `Kind() int` 的显式方法。
+- Go 的接口 + 类型断言分派可能比 TS 的构造器 `WeakMap` 慢。**接受**，见 README 的「不要拿性能当卖点」。实测（i5-13500H，20000 次）：bind 渲染 706 ns / 17 allocs，inline 512 ns / 13 allocs，嵌套子查询 312 ns / 8 allocs。分配次数是后续优化的真实指标，ns 只作参考。
 
 ---
 
@@ -155,7 +183,7 @@
 `drizzle:"<column_name>,<type>,<modifier>,<modifier>..."`
 
 修饰符：
-  primary | notnull | unique | unique=<name>
+  pk | notnull | unique | unique=<name>
   default=<literal> | defaultnow
   references=<table>.<column>[,ondelete=<action>][,onupdate=<action>]
   generated=<expr> | identity
@@ -167,23 +195,17 @@
 ```go
 // Code generated by drizzle-go. DO NOT EDIT.
 
-var Users = pg.NewTable[User]("users",
-	pg.BigSerial("id"),
-	pg.Text("name"),
-	pg.Text("email"),
-	pg.Timestamptz("created_at"),
-)
+var UsersName = pg.Col[User, string]{
+	Name: "name",
+	Ptr:  func(u *User) any { return &u.Name },
+}
 
-var Posts = pg.NewTable[Post]("posts", ...)
-
-// 列引用：类型携带列类型与 Go 类型
-var userCols = struct {
-	ID        pg.Col[int64]
-	Name      pg.Col[string]
-	Email     pg.Col[string]
-	CreatedAt pg.Col[time.Time]
-}{...}
+func scanUser(row pg.Row, u *User) error {
+	return row.Scan(&u.ID, &u.Name, &u.Email, &u.CreatedAt)
+}
 ```
+
+表级信息来自 `func (User) Table() pg.TableMeta`，不从类型名猜表名。见 [ADR-0004](./docs/adr/0004-schema-source.md)。
 
 #### 关键设计决策
 
@@ -197,12 +219,12 @@ var userCols = struct {
 2. 非法 tag（`bigintt`、重复列名、`references=nonexistent.id`）在 `go generate` 阶段报错并指出行号
 3. 二次运行 `go generate` 无 diff
 4. 删除一个字段后重新生成，残留引用会**编译失败**而不是静默失效
-5. 生成的列引用能正确用于 M2 的表达式（`eq(Users.Name, "x")` 类型检查通过）
+5. 生成的列引用能正确用于 M2 的表达式（`op.Eq(Users.Name, "x")` 类型检查通过）
 
 #### 主要风险
 
-- **可选字段语义**：Go 的零值让「未设置」与「设置为零」无法区分。`limit=0` 与「不设 limit」是两回事。**决策放在 ADR-0003**（可选值用 `*T` 还是 `Option[T]` 还是 builder 的 `Set` 标记）。
-- tag 不能很好地表达复合约束（复合主键、复合唯一索引、CHECK）。**M1 只做列级约束**，表级约束放在 `pg.Table(...).PrimaryKey(a, b)` 这类显式调用里。
+- **零值与未设置**已由 [ADR-0003](./docs/adr/0003-zero-and-unset.md) 定稿：`Limit(0)` 就是 `LIMIT 0`；SQL NULL 只是可空列的 `*T`；写入列由列清单决定。
+- tag 只表达列级约束。表名、复合主键、索引、CHECK 放在 `Table()`。M1 先解析表名和复合主键。见 [ADR-0004](./docs/adr/0004-schema-source.md)。
 
 ---
 
@@ -224,15 +246,15 @@ var userCols = struct {
 | `query/delete.go` | `Delete`：`Where` / `Returning` |
 | `query/setops.go` | `Union` / `UnionAll` / `Intersect` / `Except` |
 | `query/cte.go` | `With` / `WithRecursive` |
-| `sql/expr.go` | `Eq` / `Ne` / `Gt` / `Gte` / `Lt` / `Lte` / `InArray` / `NotInArray` / `Like` / `ILike` / `NotLike` / `NotILike` / `IsNull` / `IsNotNull` / `Between` / `NotBetween` / `And` / `Or` / `Not` / `Exists` / `NotExists` |
+| `op/` | 调用点上的 `Eq` / `And` / `Desc` 等，语法对应 drizzle 的具名导入。实现委托给 `sql` 的 chunk |
 | `sql/agg.go` | `Count` / `Sum` / `Avg` / `Min` / `Max` + `Distinct` |
 | `pg/dialect_query.go` 等 | `BuildSelectQuery` / `BuildInsertQuery` / `BuildUpdateQuery` / `BuildDeleteQuery`（`pg/` 下的方言实现，`query/` 只负责拼装） |
 
 #### 关键设计决策
 
-- **builder 是值类型，链式方法返回副本。** 理由：可复用同一个半成品 builder 派生多条查询；避免隐式共享状态。
-- **builder 只产出 `(SQL, error)`，不执行。** 执行在 M3 由 session 负责。这条边界让 M0–M2 完全不需要数据库。
-- **`Where` 接受可变参数**，多个条件之间是 AND —— 这是对 drizzle 的一个**有意偏离**（drizzle 只接受单个 `SQL`），因为它消除了一层 `and(...)` 嵌套，且没有语义损失。记入差异登记。
+- **构建器是不可变节点链表**，分叉共享前缀。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
+- **M2 的构建器能渲染出 `(SQL, error)`，不连接数据库。** 执行终端 `All(ctx)` / `One(ctx)` 的类型在 M2 定下来，真正查询在 M3。
+- **`Where` 接受一个条件**，与 drizzle 一致。多个条件用 `op.And` / `op.Or`。
 
 #### 验收标准
 
@@ -245,7 +267,7 @@ var userCols = struct {
 #### 主要风险
 
 - select 是 drizzle 里最大的文件之一（`pg-core/query-builders/select.ts` 1395 行）。**不要试图一次覆盖全部组合**，按 fixture 矩阵增量推进。
-- 类型签名容易失控。Go 没有方法级类型参数，`Returning` 的列类型无法自动推导。**决策在 ADR-0002**：先用 `pg.Col[T]` 做参数级校验，结果扫描交给 M3 的显式目标。
+- 行类型由 `Table[T]` 带进 `Select[T]`，`All` 返回 `[]T`。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
 
 ---
 
@@ -263,7 +285,7 @@ var userCols = struct {
 |---|---|
 | `session/session.go` | 方言无关的 `Session` 接口与执行流程：`Query` / `Exec` / `PreparedQuery` |
 | `session/tx.go` | `Tx(ctx, func(tx *Tx) error) error`、savepoint 嵌套 |
-| `pg/scan.go` | 行 → struct 映射（反射版） |
+| `pg/scan.go` | 驱动 `Row` 接口。扫描函数由 codegen 生成，本包不反射 |
 | `pg/db.go` | `DB` 门面：`Select()` / `Insert()` / `Update()` / `Delete()` / `Query` |
 | `pgx/` | pgx v5 驱动的 `Session` 实现 |
 | `std/` | `database/sql` 的 `Session` 实现 |
@@ -271,7 +293,7 @@ var userCols = struct {
 #### 关键设计决策
 
 - **只有一套实现，没有 `async/` 与 `effect/` 的重复。** 这是 Go 相对 rc.5 最直接的减法：`context.Context` 就是那套东西。
-- **`Scan` 的目标必须显式。** Go 没有类型级推导，`db.Select().From(Users).All(ctx)` 无法知道返回什么类型。形态：`All(ctx, &[]User{})` 或 `All[T](ctx)`（受限于方法级类型参数）—— **决策在 ADR-0002**。
+- **`All(ctx)` 返回 `[]T`，`T` 来自 `From` 的表。** 整行走生成的 `scanUser`，子集走列上的 `Ptr`。没有 `Scan(dest any)`。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
 
 #### 验收标准
 
@@ -284,7 +306,7 @@ var userCols = struct {
 
 #### 主要风险
 
-- 结果扫描的性能。**先做反射**，用基准量化，再决定是否给热路径加 codegen 生成的 mapper（对应 rc.5 的 JIT mapper 那条路，Go 侧只能走 codegen）。
+- 结果扫描的分配。整行 `All` 的 allocs/op 必须与手写 `rows.Scan(&u.ID, ...)` 相同，否则 M3 不算完成。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
 
 ---
 
@@ -349,14 +371,14 @@ var userCols = struct {
 | `relation/order.go` | 排序：`Asc` / `Desc`（如 `q.Desc(Posts.CreatedAt)`）+ 跨关系聚合排序（`desc(count)` / `asc(max)`，对应 rc.5 的 `RelationsAggregatedOrderDirection`） |
 | `relation/errors.go` | 「表未被查询」「关系不存在」这类错误的运行时检查 |
 | `pg/dialect_rqb.go` | `BuildRelationalQuery` + `collectRelationalQuery` 的移植 |
-| `relation/mapper.go` | 嵌套结果 → struct 的映射（反射版） |
+| `relation/mapper.go` | 嵌套结果组装。叶子行复用 ADR-0002 的生成扫描函数，不反射 |
 | `relation/strategy.go` | `basic` / `optimized` 两种 strategy 的分支 |
 
 #### 关键设计决策
 
 - **rc.5 的 `where` 是纯数据对象**，这让 Go 的还原度显著提高（相对 0.x 的回调形式）。Go 侧需要构造函数来表达：`q.Eq(..., ...)`、`q.And(...)`、`q.Raw(...)`。
 - **`Strategy` 的语义以 rc.5 `collectRelationalQuery` 为准，M5 开工前必须先出 ADR-0005**：两种 strategy 各自生成什么 SQL、默认值、失败模式。**这条没定清楚不要动手。**
-- **结果映射默认反射，可选 codegen。** 对应 rc.5 的 `useJitMappers`：Go 没有运行时编译，只能把「生成 mapper」搬到代码生成阶段。
+- **嵌套映射不反射。** 叶子行走生成的扫描函数。关系查询不得改 `Select[T]` 与 `Chunk`。见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md)。
 
 #### 验收标准
 
@@ -372,7 +394,7 @@ var userCols = struct {
 #### 主要风险
 
 - **这是最可能失控的里程碑。** rc.5 里 `relations.ts` 3014 行、`collectRelationalQuery` 数百行。缓解：先只支持 `basic`，`optimized` 后置；先只支持 `one` / `many`，`through` 后置。
-- 反射映射的分配量。用基准量化，必要时给 `relation/mapper` 加 codegen 路径。
+- 嵌套组装的分配量。叶子扫描已经是生成函数；组装层如果按行额外分配，要在基准里单独可见。
 
 ---
 
@@ -585,12 +607,12 @@ M2 ──> M8 ──> M9
 
 | 编号 | 决策 | 触发时机 | 状态 |
 |---|---|---|---|
-| ADR-0001 | chunk 模型的 Go 表达：接口 vs 结构体 + kind 字段 | M0 开工前 | 待定 |
-| ADR-0002 | 查询结果的类型表达：显式扫描目标 vs 泛型 vs codegen mapper | M2 开工前 | 待定 |
-| ADR-0003 | 可选值语义：`*T` / `Option[T]` / builder 的 `Set` 标记 | M1 内 | 待定 |
-| ADR-0004 | schema 描述方式：struct tag vs builder DSL vs 混合 | M1 开工前 | 待定 |
+| ADR-0001 | chunk 模型：`GetSQL` 接口，裸字符串按参数绑定 | M0 开工前 | 已接受 |
+| ADR-0002 | 查询链贴近 drizzle；`Select[T]`；生成函数扫描，无反射 | M2 开工前 | 已接受 |
+| ADR-0003 | 子句看调用，NULL 用 `*T`，写入看列清单 | M1 内 | 已接受 |
+| ADR-0004 | 结构体 + tag 是列的真相源，表名在 `Table()` | M1 开工前 | 已接受 |
 | ADR-0005 | RQB 的 `basic` 与 `optimized` 两种 strategy 的确切语义 | M5 开工前 | **必须定稿** |
-| ADR-0006 | 结果行映射：纯反射 / 纯 codegen / 双轨 | M3 内 | 待定 |
+| ADR-0006 | 结果行映射 | M3 | 不另写，见 ADR-0002 |
 | ADR-0007 | 迁移并发保护在非事务型方言上的方案 | M6 内 | 待定（v1 可不解决） |
 | ADR-0008 | DDL diff 的中间表示边界：支持哪些对象 | M7 开工前 | 待定 |
 | ADR-0009 | 是否提供 `drizzle-go` CLI 之外的程序化 API | M7 内 | 待定 |
@@ -607,11 +629,14 @@ M2 ──> M8 ──> M9
 | `sync` / `async` / `effect` 三套实现 | `async/db.ts` 与 `effect/db.ts` 各 823 行 | 一套 `context.Context` API | Go 不需要 effect 系统 |
 | 迁移表升级 `upToV1` | 约 300 行 | 不实现 | 新项目直接建 v1 表 |
 | `Column.primary` vs `config.primaryKey` | 两个名字并存 | 统一为 `Primary` | 兼容期的产物 |
-| `ValueRows.getSQL()` | legacy shim | 不提供 | 无历史调用方 |
+| `ValueRows.getSQL()` | legacy shim | 保留 | `Chunk` 的契约就是 `GetSQL`；且 M2 之前构建器可按普通片段处理多行 values |
+| 裸字符串语义 | 模板里的字面量，插值绑定 | **插值也绑定**；字面量必须 `Raw(...)` | Go 没有模板字符串，安全默认值优先，见 [ADR-0001](./docs/adr/0001-chunk-model.md) |
+| `tagged` 模式 | `_sql` 片段数组，供 Bun.SQL 缓存 | 不移植 | Go 无对应消费方 |
+| `invokeSource` | mssql / drizzle-kit 的分派开关 | 不移植 | M0 只有 pg，有需要时再加 |
 | `sql.fromList` | 标注 deprecated | 不引入 | 用 `sql.Join` 替代 |
-| `Where` 参数 | 单个 `SQL \| undefined` | 可变参数，多条件自动 AND | 消除嵌套 `and()`，无语义损失 |
-| 结果类型推导 | 类型级解释器 `BuildQueryResult` | codegen 产出固定结构体 | Go 无类型级计算，见 [还原度评估](#go-还原度评估) |
-| 行映射加速 | `new Function` 运行时生成 | codegen 在生成阶段产出 mapper | Go 无运行时编译 |
+| `Where` 参数 | 单个 `SQL \| undefined` | 单个条件，用 `op.And` / `op.Or` 组合 | 与 drizzle 的调用形状一致，见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md) |
+| 结果类型推导 | 类型级解释器 `BuildQueryResult` | `Table[T]` 把 `T` 带进 `Select[T]`，`All` 返回 `[]T` | Go 无类型级计算，见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md) |
+| 行映射 | `new Function` 运行时生成，或反射 | 只有生成的扫描函数 | 反射会把库做成 bun / gorm，见 [ADR-0002](./docs/adr/0002-query-syntax-and-scan.md) |
 | `db.query.users` | `Proxy` 动态属性 | 生成包里的具体字段 | Go 无 Proxy |
 | `chunkKinds` 数字分派 | 原型 `Symbol` 缓存 + `WeakMap` | 接口 + 类型断言 | JS 特有的分派优化，Go 的接口断言已足够快 |
 | `commonStringChunks` 驻留 | 约 70 个单例片段 | 不驻留（字符串常量足够） | Go 的字符串常量不进堆分配 |
@@ -673,9 +698,9 @@ M2 ──> M8 ──> M9
 |---|---|---|---|---|
 | R1 | **M5（RQB）复杂度失控** | 高 | 高 | 先做 `basic` strategy；先做 `one`/`many`；`through` 与 `optimized` 后置；每个子功能单独验收 |
 | R2 | **M7（DDL diff）成为无底洞** | 高 | 高 | 只做 pg；只做 generate 不做自动修复；明确不支持视图/触发器/函数/分区；改名不猜 |
-| R3 | **结果类型推导缺失导致 API 难用** | 高 | 中 | 把 codegen 做深：生成类型化 query 对象（`db.Query.Users` 的具体类型），而不是 `map[string]any` |
-| R4 | **反射映射性能不达预期** | 中 | 中 | 基准先行；热路径给 codegen mapper；如实公布数字 |
-| R5 | **Go 的零值语义让 API 出现隐性陷阱** | 中 | 高 | ADR-0003 专门定；测试覆盖「设置为零」与「未设置」 |
+| R3 | **结果类型推导缺失导致 API 难用** | 高 | 中 | `From(Users)` 确定 `[]User`。不提供 `map[string]any` 扫描 |
+| R4 | **生成扫描比手写 Scan 多分配** | 中 | 中 | M3 验收：整行 allocs/op 与手写 `rows.Scan` 相同 |
+| R5 | **Go 的零值语义让 API 出现隐性陷阱** | 中 | 高 | 已由 [ADR-0003](./docs/adr/0003-zero-and-unset.md) 定稿；测试覆盖 `Limit(0)` 与 `Set(col, 0)` |
 | R6 | **方言抽象漏了，加 mysql 时要改核心** | 中 | 中 | M8 的验收标准里明确要求「核心类型零改动」；改动必须记录 |
 | R7 | **范围膨胀**（想同时做 studio / seed / 多语言客户端） | 高 | 中 | README 的非目标清单就是防线；新需求先问「是不是 v1 之后」 |
 | R8 | **单人项目的时间风险** | 高 | 高 | 里程碑可独立交付；M0–M2 就是一个有价值的最小闭环（SQL 构建器） |
@@ -703,7 +728,7 @@ M2 ──> M8 ──> M9
 
 | # | 里程碑 | 依赖 | 粗估 | 主要产出 | 状态 |
 |---|---|---|---|---|---|
-| M0 | 地基：SQL 片段层与渲染器 | — | 2–3 周 | `sql/`、`pg/dialect`、`internal/testutil` | 未开工 |
+| M0 | 地基：SQL 片段层与渲染器 | — | 2–3 周 | `sql/`、`pg/dialect`、`internal/testutil` | 已完成 |
 | M1 | Schema 定义与代码生成 | M0 | 3–4 周 | `pg/types`、`codegen/`、`cmd/drizzle-go generate` | 未开工 |
 | M2 | 查询构建器（pg） | M0、M1 | 4–6 周 | `query/*`、`sql/expr` | 未开工 |
 | M3 | 执行层 | M2 | 2–3 周 | `session/`、`pg/scan`、`pg/db`、`pgx/`、`std/` | 未开工 |
@@ -724,3 +749,4 @@ M2 ──> M8 ──> M9
 | 日期 | 变更 |
 |---|---|
 | 2026-11-16 | 初版。参考基准锁定 drizzle-orm v1.0.0-rc.5 |
+| 2026-11-20 | 接受 ADR-0002 / 0003 / 0004：查询链贴近 drizzle，生成函数扫描，零值三套机制，schema 以结构体为真相源 |
