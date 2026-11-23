@@ -134,6 +134,17 @@ applied, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{
 
 `mist check` compares the folder with the snapshot. `mist push` prints the SQL that would change the database, and applies it with `--force`.
 
+## Example
+
+[`examples/tasks`](examples/tasks) is a task list. The command line and the HTTP server use the standard library. It generates the schema, applies the PostgreSQL migrations, and runs insert, select, update, delete, and transactions.
+
+```
+cd examples/tasks
+export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/app?sslmode=disable
+go run . add "buy milk"
+go run . serve
+```
+
 ## Benchmark
 
 SQLite in one process, `CGO_ENABLED=0`, Intel i5-13500H. Insert one row, update one row, read one row by primary key, read 100 rows. Nanoseconds per operation, lower is better. mist and sqlx are the mean of five runs.

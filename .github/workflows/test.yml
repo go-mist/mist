@@ -26,7 +26,10 @@ jobs:
       - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./ddl/sqlite/
       - run: go run ./cmd/mist generate -dir internal/schemafixture
       - run: go run ./cmd/mist generate -dir internal/mysqlfixture
+      - run: go run ./cmd/mist generate -dir examples/tasks
       - run: git diff --exit-code
+      - run: go test -count=1 .
+        working-directory: examples/tasks
   bench:
     runs-on: ubuntu-latest
     steps:

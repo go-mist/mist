@@ -1,0 +1,178 @@
+{
+  "schema": {
+    "Enums": null,
+    "Tables": [
+      {
+        "Name": "tasks",
+        "Columns": [
+          {
+            "Name": "id",
+            "Type": {
+              "Name": "bigserial",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 9
+            }
+          },
+          {
+            "Name": "title",
+            "Type": {
+              "Name": "text",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 10
+            }
+          },
+          {
+            "Name": "done",
+            "Type": {
+              "Name": "boolean",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "false",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 11
+            }
+          }
+        ],
+        "PrimaryKey": [
+          "id"
+        ],
+        "PrimaryKeyName": "",
+        "Uniques": null,
+        "Indexes": null,
+        "Checks": null,
+        "ForeignKeys": null,
+        "Loc": {
+          "File": "schema.go",
+          "Line": 8
+        }
+      },
+      {
+        "Name": "task_events",
+        "Columns": [
+          {
+            "Name": "id",
+            "Type": {
+              "Name": "bigserial",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 18
+            }
+          },
+          {
+            "Name": "task_id",
+            "Type": {
+              "Name": "bigint",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 19
+            }
+          },
+          {
+            "Name": "action",
+            "Type": {
+              "Name": "text",
+              "Length": 0,
+              "Precision": 0,
+              "Scale": 0,
+              "ArrayDims": 0,
+              "Enum": false
+            },
+            "NotNull": true,
+            "Default": "",
+            "Generated": "",
+            "Identity": false,
+            "Loc": {
+              "File": "schema.go",
+              "Line": 20
+            }
+          }
+        ],
+        "PrimaryKey": [
+          "id"
+        ],
+        "PrimaryKeyName": "",
+        "Uniques": null,
+        "Indexes": null,
+        "Checks": null,
+        "ForeignKeys": [
+          {
+            "Name": "task_events_task_id_fkey",
+            "Columns": [
+              "task_id"
+            ],
+            "RefTable": "tasks",
+            "RefColumns": [
+              "id"
+            ],
+            "OnDelete": "",
+            "OnUpdate": "",
+            "Loc": {
+              "File": "schema.go",
+              "Line": 19
+            }
+          }
+        ],
+        "Loc": {
+          "File": "schema.go",
+          "Line": 17
+        }
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "name": "20261123100505_init",
+      "hash": "ab63dd579e4aad64905c17a6d0ea726dfe25729b460e9518c2fcb53f04e281b8"
+    }
+  ]
+}

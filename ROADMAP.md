@@ -595,7 +595,7 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 | Golden 测试工具 | `testutil.Run` 对拍一个目录里的 JSON。加 `Case` 后 `go test -update-golden` 写出 fixture | 已完成 |
 | testcontainers | 集成测试在没有 DSN 时用 testcontainers 起 PostgreSQL 16 和 MySQL 8.4。SQLite 是临时文件，驱动嵌在进程里。GitHub Actions 走这条路径 | 已完成 |
 | Benchmark | `bench/` 对比 mist、sqlx、gorm、ent、bun 的查询构建、结果映射、并发执行。Actions 把 `bench.txt` 存成 artifact | 已完成 |
-| 示例项目 | REST 服务 + CLI 两个完整示例 | 未开工 |
+| 示例项目 | `examples/tasks`：标准库 CLI 和 HTTP，覆盖生成、迁移、增删改查和事务 | 已完成 |
 | 文档站 | pkg.go.dev 之外的教程、迁移指南（从 gorm / sqlc 过来） | 未开工 |
 | 发布流程 | tag、changelog、语义化版本 | 未开工 |
 | 错误信息 | 所有用户可见错误都必须包含「是哪张表、哪一列、期望什么」 | 未开工 |
@@ -849,3 +849,4 @@ M2 ──> M8 ──> M9
 | 2026-11-23 | M9 完成。`sqlite.FindMany` 在嵌入的 3.53.3 上跑通 `one` / `many` / `through`。改列重建表已执行。见 ADR-0014 |
 | 2026-11-23 | 查询日志。`logger.Default` 的行格式与 drizzle-orm 的 `DefaultLogger` 相同。不传 logger 时不写。pg、std、mysql、sqlite 的查询、执行和预处理语句都会记 |
 | 2026-11-23 | M10 开始。`testutil.Run` 按目录对拍 golden。集成测试用 testcontainers 起 PostgreSQL 和 MySQL，SQLite 仍是临时文件。`bench/` 对比 sqlx、gorm、ent、bun，Actions 保存基准输出 |
+| 2026-11-23 | `examples/tasks`：标准库 CLI 和 HTTP。生成表、PostgreSQL 迁移、增删改查、事务。不引入别的依赖 |
