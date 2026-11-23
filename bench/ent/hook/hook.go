@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/xbmlz/mist/bench/ent"
+	"github.com/go-mist/mist/bench/ent"
 )
 
 // The UserFunc type is an adapter to allow the use of ordinary

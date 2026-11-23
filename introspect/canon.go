@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/schema"
 )
 
 // typeFact is the type facts for one column in pg_catalog.

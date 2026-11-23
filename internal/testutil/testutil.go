@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // updateGolden rewrites fixture JSON from the current query.

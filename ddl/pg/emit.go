@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/schema"
 )
 
 // breakpoint matches migrate's split marker verbatim.

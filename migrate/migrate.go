@@ -7,7 +7,7 @@ import (
 	"regexp"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/query"
 )
 
 // Conn is a connection that can open a transaction. Attach pg.DB with UsePG.

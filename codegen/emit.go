@@ -24,11 +24,11 @@ func emit(pkg string, tables []table) ([]byte, error) {
 	if len(tables) > 0 && tables[0].dialect == "mysql" {
 		dialect = "mysql"
 	}
-	fmt.Fprintf(&b, "\t\"github.com/xbmlz/mist/%s\"\n", dialect)
+	fmt.Fprintf(&b, "\t\"github.com/go-mist/mist/%s\"\n", dialect)
 	if needsCodecs(tables) {
-		fmt.Fprintf(&b, "\t\"github.com/xbmlz/mist/%s/codecs\"\n", dialect)
+		fmt.Fprintf(&b, "\t\"github.com/go-mist/mist/%s/codecs\"\n", dialect)
 	}
-	b.WriteString("\t\"github.com/xbmlz/mist/sql\"\n)\n\n")
+	b.WriteString("\t\"github.com/go-mist/mist/sql\"\n)\n\n")
 	for i, t := range tables {
 		if i > 0 {
 			b.WriteByte('\n')

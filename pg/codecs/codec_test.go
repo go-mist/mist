@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/pg/codecs"
+	"github.com/go-mist/mist/pg/codecs"
 )
 
 func TestNumericCastAndReject(t *testing.T) {

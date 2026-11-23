@@ -4,8 +4,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // RenderSelect writes a simple select directly. The text matches assembleSelect plus Render.

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // WithQuery is a named query in a with. From uses it as a table, and Col qualifies columns to this name.

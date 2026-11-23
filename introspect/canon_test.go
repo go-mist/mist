@@ -3,7 +3,7 @@ package introspect
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestCanonicalTypes(t *testing.T) {

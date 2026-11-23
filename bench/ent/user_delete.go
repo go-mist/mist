@@ -8,8 +8,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/xbmlz/mist/bench/ent/predicate"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/predicate"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // UserDelete is the builder for deleting a User entity.

@@ -12,7 +12,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // ent aliases to avoid import conflicts in user's code.

@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/pg"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/pg"
 )
 
 func TestConcurrentCRUD(t *testing.T) {

@@ -7,7 +7,7 @@ package mysql
 import (
 	"strings"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Dialect implements the three escapes the renderer needs.

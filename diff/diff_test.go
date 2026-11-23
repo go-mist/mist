@@ -3,7 +3,7 @@ package diff
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestRenameIsDropAndAdd(t *testing.T) {

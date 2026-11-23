@@ -4,7 +4,7 @@
 // sql.And, sql.Or, and sql.Not remain fragment combinators; op.And calls them.
 package op
 
-import "github.com/xbmlz/mist/sql"
+import "github.com/go-mist/mist/sql"
 
 // Eq renders `left = right`. right is bound as a parameter.
 func Eq(left sql.Chunk, right any) sql.Chunk { return cmp(left, " = ", right) }

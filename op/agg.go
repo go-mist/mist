@@ -1,6 +1,6 @@
 package op
 
-import "github.com/xbmlz/mist/sql"
+import "github.com/go-mist/mist/sql"
 
 // Count renders count. With no expression it is count(*); with one expression it is count(expr).
 func Count(expr ...sql.Chunk) *sql.SQL {

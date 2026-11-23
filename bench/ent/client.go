@@ -9,12 +9,12 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/xbmlz/mist/bench/ent/migrate"
+	"github.com/go-mist/mist/bench/ent/migrate"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // Client is the client that holds all ent builders.

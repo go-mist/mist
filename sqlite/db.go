@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	_ "github.com/glebarez/go-sqlite"
-	"github.com/xbmlz/mist/logger"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/logger"
+	"github.com/go-mist/mist/query"
 )
 
 // driverName is the database/sql name registered by glebarez/go-sqlite.

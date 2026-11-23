@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // TestSQLMatrix locks the SQL shape of the query builder. At least 40 cases, covering join, subquery,

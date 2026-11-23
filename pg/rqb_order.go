@@ -3,8 +3,8 @@ package pg
 import (
 	"fmt"
 
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 type orderSource struct {

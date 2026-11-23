@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/schema"
 )
 
 // Querier is a connection that can run a query. *pg.DB and a transaction both satisfy it.

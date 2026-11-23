@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 type rqbUser struct {

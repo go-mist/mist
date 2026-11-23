@@ -3,7 +3,7 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // This file covers interface methods on chunk types: most are called from inside the renderer,

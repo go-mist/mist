@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Dialect implements the minimum contract of dialect.Dialect.

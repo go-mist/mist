@@ -1,7 +1,7 @@
 package codegen
 
 import (
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/schema"
 )
 
 // LoadSchema reads the DDL schema from structs in a directory. It does not run user code.

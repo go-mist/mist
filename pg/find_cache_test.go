@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/relation"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/relation"
 )
 
 type cacheUser struct {

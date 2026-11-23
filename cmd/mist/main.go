@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xbmlz/mist/codegen"
-	pgddl "github.com/xbmlz/mist/ddl/pg"
-	sqliteddl "github.com/xbmlz/mist/ddl/sqlite"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/introspect"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/codegen"
+	pgddl "github.com/go-mist/mist/ddl/pg"
+	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/introspect"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/schema"
 )
 
 var schemaIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)

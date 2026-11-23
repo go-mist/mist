@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sql/dialect"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sql/dialect"
 )
 
 // planKey is one simple statement shape. Pointer identity is stable for a package-level table or column.

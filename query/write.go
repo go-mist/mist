@@ -3,8 +3,8 @@ package query
 import (
 	"reflect"
 
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sql/dialect"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sql/dialect"
 )
 
 // InsertDialect is the capability a dialect must add to render an insert.

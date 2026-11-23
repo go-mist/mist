@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 // Queryer is a connection that can run one query. Both mysql.DB and mysql.Tx satisfy it.

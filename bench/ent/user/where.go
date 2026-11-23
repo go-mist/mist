@@ -4,7 +4,7 @@ package user
 
 import (
 	"entgo.io/ent/dialect/sql"
-	"github.com/xbmlz/mist/bench/ent/predicate"
+	"github.com/go-mist/mist/bench/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.

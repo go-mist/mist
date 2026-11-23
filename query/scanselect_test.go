@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestValueCountSQL(t *testing.T) {

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/mysql/codecs"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/mysql/codecs"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/sql"
 )
 
 type codecSample struct {

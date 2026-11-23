@@ -5,12 +5,12 @@ package enttest
 import (
 	"context"
 
-	"github.com/xbmlz/mist/bench/ent"
+	"github.com/go-mist/mist/bench/ent"
 	// required by schema hooks.
-	_ "github.com/xbmlz/mist/bench/ent/runtime"
+	_ "github.com/go-mist/mist/bench/ent/runtime"
 
 	"entgo.io/ent/dialect/sql/schema"
-	"github.com/xbmlz/mist/bench/ent/migrate"
+	"github.com/go-mist/mist/bench/ent/migrate"
 )
 
 type (

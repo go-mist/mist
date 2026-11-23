@@ -9,7 +9,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // UserCreate is the builder for creating a User entity.

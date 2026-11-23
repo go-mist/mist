@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sql/dialect"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sql/dialect"
 )
 
 // ErrNoRows means One read no rows.

@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/op"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/op"
 )
 
 func TestCRUD(t *testing.T) {

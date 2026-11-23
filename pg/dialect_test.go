@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestEscapeName(t *testing.T) {

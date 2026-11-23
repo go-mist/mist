@@ -3,8 +3,8 @@ package migrate
 import (
 	"context"
 
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/query"
 )
 
 // UsePG uses pg.DB as the migration connection. Statements inside a transaction run on that transaction's own connection.

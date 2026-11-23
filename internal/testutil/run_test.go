@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestRunComparesFixture(t *testing.T) {

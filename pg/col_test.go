@@ -3,8 +3,8 @@ package pg_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestColAndTableRender(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/xbmlz/mist/entity"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/entity"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestKindOf(t *testing.T) {

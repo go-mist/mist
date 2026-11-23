@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	sqliteddl "github.com/xbmlz/mist/ddl/sqlite"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/schema"
+	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestAlterColumnRebuildsTable(t *testing.T) {

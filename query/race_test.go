@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/pg"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/pg"
 )
 
 func TestBuilderConcurrentRender(t *testing.T) {

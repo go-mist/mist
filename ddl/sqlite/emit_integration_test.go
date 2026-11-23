@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	sqliteddl "github.com/xbmlz/mist/ddl/sqlite"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/schema"
-	"github.com/xbmlz/mist/sqlite"
+	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/schema"
+	"github.com/go-mist/mist/sqlite"
 )
 
 func TestAlterColumnRuns(t *testing.T) {

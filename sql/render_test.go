@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 // testColumn simulates a column with a dedicated render branch and an omit-parentheses contract.

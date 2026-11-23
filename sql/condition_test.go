@@ -3,7 +3,7 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // This file corresponds to drizzle-orm v1.0.0-rc.5's

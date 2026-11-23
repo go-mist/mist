@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xbmlz/mist/entity"
-	"github.com/xbmlz/mist/sql/dialect"
+	"github.com/go-mist/mist/entity"
+	"github.com/go-mist/mist/sql/dialect"
 )
 
 // Chunk is one element of an SQL fragment stream.

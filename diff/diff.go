@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/schema"
 )
 
 // Kind is the category of one change.

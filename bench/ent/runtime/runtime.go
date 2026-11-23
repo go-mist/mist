@@ -2,7 +2,7 @@
 
 package runtime
 
-// The schema-stitching logic is generated in github.com/xbmlz/mist/bench/ent/runtime.go
+// The schema-stitching logic is generated in github.com/go-mist/mist/bench/ent/runtime.go
 
 const (
 	Version = "v0.14.5"                                         // Version of ent codegen.

@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Codec is a six-slot conversion for one PostgreSQL type.

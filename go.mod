@@ -1,4 +1,4 @@
-module github.com/xbmlz/mist
+module github.com/go-mist/mist
 
 go 1.26.4
 

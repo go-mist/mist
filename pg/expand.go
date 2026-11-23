@@ -3,8 +3,8 @@ package pg
 import (
 	"errors"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 type queryExpr interface {

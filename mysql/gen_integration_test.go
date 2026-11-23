@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/internal/mysqlfixture"
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/op"
+	"github.com/go-mist/mist/internal/mysqlfixture"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/op"
 )
 
 func TestGeneratedNote(t *testing.T) {

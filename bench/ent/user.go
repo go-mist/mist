@@ -8,7 +8,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // User is the model entity for the User schema.

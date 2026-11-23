@@ -12,13 +12,13 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/xbmlz/mist/op"
-	mist "github.com/xbmlz/mist/sqlite"
+	"github.com/go-mist/mist/op"
+	mist "github.com/go-mist/mist/sqlite"
 	"gorm.io/gorm"
 	gormlog "gorm.io/gorm/logger"
 
-	"github.com/xbmlz/mist/bench/ent"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent"
+	"github.com/go-mist/mist/bench/ent/user"
 
 	_ "github.com/glebarez/go-sqlite"
 )

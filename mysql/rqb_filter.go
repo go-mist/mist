@@ -3,9 +3,9 @@ package mysql
 import (
 	"fmt"
 
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 func (q *rqb) compileFilter(table *relation.Table, alias string, f relation.Filter, depth int) (*sql.SQL, bool, error) {

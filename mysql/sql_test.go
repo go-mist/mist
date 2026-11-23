@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestEscape(t *testing.T) {

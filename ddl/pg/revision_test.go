@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestThreeRevisions(t *testing.T) {

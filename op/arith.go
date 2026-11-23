@@ -1,6 +1,6 @@
 package op
 
-import "github.com/xbmlz/mist/sql"
+import "github.com/go-mist/mist/sql"
 
 // Add renders `(left + right)`.
 func Add(left sql.Chunk, right any) *sql.SQL { return arith(left, " + ", right) }

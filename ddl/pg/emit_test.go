@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/codegen"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/codegen"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestFixtureAgainstEmpty(t *testing.T) {

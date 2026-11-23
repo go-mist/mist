@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestRelationalSQL(t *testing.T) {

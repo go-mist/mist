@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/xbmlz/mist/diff"
+	"github.com/go-mist/mist/diff"
 )
 
 // Execute runs statements split on statement-breakpoint. The caller owns the transaction and search_path.

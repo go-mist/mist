@@ -1,4 +1,4 @@
-module github.com/xbmlz/mist/bench
+module github.com/go-mist/mist/bench
 
 go 1.26.4
 
@@ -9,7 +9,7 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/uptrace/bun v1.2.18
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
-	github.com/xbmlz/mist v0.0.0
+	github.com/go-mist/mist v0.0.0
 	gorm.io/gorm v1.31.1
 )
 
@@ -45,4 +45,4 @@ require (
 	modernc.org/sqlite v1.55.0 // indirect
 )
 
-replace github.com/xbmlz/mist => ../
+replace github.com/go-mist/mist => ../

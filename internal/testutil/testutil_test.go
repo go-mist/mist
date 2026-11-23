@@ -3,9 +3,9 @@ package testutil_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/internal/testutil"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/testutil"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestGoldenFixtures(t *testing.T) {

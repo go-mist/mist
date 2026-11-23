@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // ScanFunc scans one row into T in select-list order.

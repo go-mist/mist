@@ -6,8 +6,8 @@
 package query
 
 import (
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sql/dialect"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sql/dialect"
 )
 
 // Column is one column in a select list. T is the row type.

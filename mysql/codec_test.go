@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/mysql/codecs"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/mysql/codecs"
+	"github.com/go-mist/mist/sql"
 )
 
 type codecRow struct {

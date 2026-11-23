@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 func TestNoCast(t *testing.T) {

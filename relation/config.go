@@ -3,7 +3,7 @@ package relation
 import (
 	"fmt"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Column selection. nil means every column. Only keeps the listed keys, and that order is the select order.

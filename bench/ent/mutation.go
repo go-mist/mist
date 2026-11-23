@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/xbmlz/mist/bench/ent/predicate"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/predicate"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 const (

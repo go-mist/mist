@@ -5,10 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sqlite"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sqlite"
 )
 
 type fastUser struct {

@@ -11,9 +11,9 @@ import (
 	"fmt"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/xbmlz/mist/logger"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/logger"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/query"
 )
 
 // DB is a database/sql connection pool. The dialect is PostgreSQL.

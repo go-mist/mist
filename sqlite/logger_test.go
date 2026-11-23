@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/xbmlz/mist/logger"
-	"github.com/xbmlz/mist/sqlite"
+	"github.com/go-mist/mist/logger"
+	"github.com/go-mist/mist/sqlite"
 )
 
 type recording struct {

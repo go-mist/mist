@@ -3,7 +3,7 @@ package logger_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/logger"
+	"github.com/go-mist/mist/logger"
 )
 
 type lines struct {

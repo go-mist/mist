@@ -3,7 +3,7 @@ package query
 import (
 	"fmt"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Subquery is an aliased derived table. From and Join use it.

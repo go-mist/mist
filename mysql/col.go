@@ -1,8 +1,8 @@
 package mysql
 
 import (
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // Row is one row of a query result. Generated code writes mysql.Row.

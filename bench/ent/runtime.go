@@ -3,8 +3,8 @@
 package ent
 
 import (
-	"github.com/xbmlz/mist/bench/ent/schema"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/schema"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // The init function reads all schema descriptors with runtime code

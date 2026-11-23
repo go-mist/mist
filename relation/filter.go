@@ -1,6 +1,6 @@
 package relation
 
-import "github.com/xbmlz/mist/sql"
+import "github.com/go-mist/mist/sql"
 
 // Kinds of filter nodes. Constructors fill them, and the compiler reads them.
 const (

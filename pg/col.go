@@ -1,8 +1,8 @@
 package pg
 
 import (
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // Row is one row of a query result. It is defined as sql.Row; this alias lets generated code keep writing pg.Row.

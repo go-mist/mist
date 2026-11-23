@@ -3,8 +3,8 @@ package pg
 import (
 	"fmt"
 
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
 )
 
 // These fragments match the rc.5 pg-core dialect rqbChunks verbatim.

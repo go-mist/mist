@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // ErrClosed means the statement has already been closed and cannot be executed again.

@@ -7,7 +7,7 @@ package sqlite
 import (
 	"strings"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Dialect implements dialect.Dialect.

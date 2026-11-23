@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/pg"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/pg"
 )
 
 func TestMigrate(t *testing.T) {

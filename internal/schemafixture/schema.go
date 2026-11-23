@@ -3,10 +3,10 @@ package schemafixture
 import (
 	"time"
 
-	"github.com/xbmlz/mist/pg"
+	"github.com/go-mist/mist/pg"
 )
 
-//go:generate go run github.com/xbmlz/mist/cmd/mist generate
+//go:generate go run github.com/go-mist/mist/cmd/mist generate
 
 // Note is not a table. It has no drizzle tag, so the generator must ignore it.
 type Note struct {

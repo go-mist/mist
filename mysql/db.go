@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/xbmlz/mist/logger"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/logger"
+	"github.com/go-mist/mist/query"
 )
 
 // DB is a database/sql connection pool. The dialect is MySQL.

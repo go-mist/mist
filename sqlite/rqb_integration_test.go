@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/relation"
-	"github.com/xbmlz/mist/sql"
-	"github.com/xbmlz/mist/sqlite"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/relation"
+	"github.com/go-mist/mist/sql"
+	"github.com/go-mist/mist/sqlite"
 )
 
 type countingQueryer struct {

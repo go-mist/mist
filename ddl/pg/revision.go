@@ -8,9 +8,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/schema"
 )
 
 // Written is one write to disk. An empty Name means the schema did not change and no new directory was written.

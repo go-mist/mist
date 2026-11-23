@@ -11,8 +11,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/xbmlz/mist/bench/ent/predicate"
-	"github.com/xbmlz/mist/bench/ent/user"
+	"github.com/go-mist/mist/bench/ent/predicate"
+	"github.com/go-mist/mist/bench/ent/user"
 )
 
 // UserQuery is the builder for querying User entities.

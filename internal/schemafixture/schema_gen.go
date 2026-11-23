@@ -5,9 +5,9 @@ package schemafixture
 import (
 	"time"
 
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/pg/codecs"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/pg/codecs"
+	"github.com/go-mist/mist/sql"
 )
 
 type userTable struct {

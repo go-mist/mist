@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/introspect"
-	"github.com/xbmlz/mist/migrate"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/introspect"
+	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestPushDropWaitsForForce(t *testing.T) {

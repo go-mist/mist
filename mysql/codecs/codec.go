@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/sql"
 )
 
 // Codec rewrites parameter values. CastParam stays empty on MySQL.

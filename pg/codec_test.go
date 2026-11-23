@@ -3,10 +3,10 @@ package pg_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/pg/codecs"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/pg/codecs"
+	"github.com/go-mist/mist/sql"
 )
 
 type money struct {

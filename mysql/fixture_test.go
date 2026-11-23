@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/mist/internal/schemafixture"
-	"github.com/xbmlz/mist/mysql"
-	"github.com/xbmlz/mist/op"
-	"github.com/xbmlz/mist/query"
-	"github.com/xbmlz/mist/sql"
+	"github.com/go-mist/mist/internal/schemafixture"
+	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/op"
+	"github.com/go-mist/mist/query"
+	"github.com/go-mist/mist/sql"
 )
 
 // TestSQLMatrix applies the M2 query matrix to MySQL. Placeholders are ?, and identifiers use backticks.

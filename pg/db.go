@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/logger"
-	"github.com/xbmlz/mist/query"
+	"github.com/go-mist/mist/logger"
+	"github.com/go-mist/mist/query"
 )
 
 // stmtSeq names server-side statements on a transaction. Statements on the pool take no name; see poolStmt.

@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/xbmlz/mist/codegen"
-	ddlpg "github.com/xbmlz/mist/ddl/pg"
-	"github.com/xbmlz/mist/diff"
-	"github.com/xbmlz/mist/internal/testdb"
-	"github.com/xbmlz/mist/pg"
-	"github.com/xbmlz/mist/schema"
+	"github.com/go-mist/mist/codegen"
+	ddlpg "github.com/go-mist/mist/ddl/pg"
+	"github.com/go-mist/mist/diff"
+	"github.com/go-mist/mist/internal/testdb"
+	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/schema"
 )
 
 func TestRoundTrip(t *testing.T) {

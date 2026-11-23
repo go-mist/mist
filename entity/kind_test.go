@@ -3,7 +3,7 @@ package entity_test
 import (
 	"testing"
 
-	"github.com/xbmlz/mist/entity"
+	"github.com/go-mist/mist/entity"
 )
 
 func TestKindString(t *testing.T) {

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/xbmlz/mist/mysql"
+	"github.com/go-mist/mist/mysql"
 )
 
-//go:generate go run github.com/xbmlz/mist/cmd/mist generate
+//go:generate go run github.com/go-mist/mist/cmd/mist generate
 
 // Note is a MySQL table. The generator should emit mysql.Col.
 type Note struct {
