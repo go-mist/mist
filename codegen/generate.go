@@ -1,4 +1,4 @@
-// Package codegen reads drizzle tags on structs and generates column descriptors and scan functions.
+// Package codegen reads mist tags on structs and generates column descriptors and scan functions.
 // Generation may inspect the syntax tree. Running a query does not read tags and does not reflect on fields.
 package codegen
 
@@ -191,7 +191,7 @@ func load(dir string) (*loader, error) {
 		g.errs = append(g.errs, st.tableErrs...)
 		if !hasMethod {
 			if st.hasTag && !st.embedded {
-				g.fail(st.file, st.line, "type %s has drizzle tags but no Table() method", name)
+				g.fail(st.file, st.line, "type %s has mist tags but no Table() method", name)
 			}
 			continue
 		}
@@ -329,7 +329,7 @@ func (g *loader) expand(name string, st *astStruct, structs map[string]*astStruc
 		raw := tagValue(f)
 		if raw == "" {
 			if ast.IsExported(field) {
-				st.tableErrs = append(st.tableErrs, g.err(fileName, line, "exported field %s is missing a drizzle tag", field))
+				st.tableErrs = append(st.tableErrs, g.err(fileName, line, "exported field %s is missing a mist tag", field))
 			}
 			continue
 		}
@@ -440,7 +440,7 @@ func tagValue(f *ast.Field) string {
 	if err != nil {
 		return ""
 	}
-	return reflect.StructTag(unquoted).Get("drizzle")
+	return reflect.StructTag(unquoted).Get("mist")
 }
 
 func (g *loader) parseTag(fileName string, line int, field string, expr ast.Expr, raw string) (column, error) {

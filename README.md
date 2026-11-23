@@ -25,10 +25,10 @@ import (
 //go:generate mist generate
 
 type User struct {
-	ID        int64     `drizzle:"id,bigserial,pk"`
-	Name      string    `drizzle:"name,text,notnull"`
-	Email     *string   `drizzle:"email,text,unique"`
-	CreatedAt time.Time `drizzle:"created_at,timestamptz,notnull,default=now()"`
+	ID        int64     `mist:"id,bigserial,pk"`
+	Name      string    `mist:"name,text,notnull"`
+	Email     *string   `mist:"email,text,unique"`
+	CreatedAt time.Time `mist:"created_at,timestamptz,notnull,default=now()"`
 }
 
 func (User) Table() pg.TableMeta { return pg.TableMeta{Name: "users"} }

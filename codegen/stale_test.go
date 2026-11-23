@@ -23,8 +23,8 @@ func TestStaleGenerateDoesNotCompile(t *testing.T) {
 	}
 	schema := "package stale\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
 		"type User struct {\n" +
-		"\tID int64 `drizzle:\"id,bigserial,pk\"`\n" +
-		"\tEmail *string `drizzle:\"email,text\"`\n" +
+		"\tID int64 `mist:\"id,bigserial,pk\"`\n" +
+		"\tEmail *string `mist:\"email,text\"`\n" +
 		"}\n\n" +
 		"func (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n"
 	if err := os.WriteFile(filepath.Join(dir, "schema.go"), []byte(schema), 0o644); err != nil {
@@ -35,7 +35,7 @@ func TestStaleGenerateDoesNotCompile(t *testing.T) {
 	}
 	without := "package stale\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
 		"type User struct {\n" +
-		"\tID int64 `drizzle:\"id,bigserial,pk\"`\n" +
+		"\tID int64 `mist:\"id,bigserial,pk\"`\n" +
 		"}\n\n" +
 		"func (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n"
 	if err := os.WriteFile(filepath.Join(dir, "schema.go"), []byte(without), 0o644); err != nil {

@@ -62,57 +62,57 @@ func TestGenerateRejects(t *testing.T) {
 	}{
 		{
 			name: "missing Table",
-			body: "type User struct { ID int64 `drizzle:\"id,bigserial,pk\"` }\n",
+			body: "type User struct { ID int64 `mist:\"id,bigserial,pk\"` }\n",
 			want: "no Table() method",
 		},
 		{
 			name: "go type mismatch",
-			body: "type User struct { ID string `drizzle:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { ID string `mist:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "should be int64",
 		},
 		{
 			name: "nullable must be pointer",
-			body: "type User struct { Email string `drizzle:\"email,text\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { Email string `mist:\"email,text\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "should be *string",
 		},
 		{
 			name: "pk must not be pointer",
-			body: "type User struct { ID *int64 `drizzle:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { ID *int64 `mist:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "not null",
 		},
 		{
 			name: "dangling reference",
-			body: "type Post struct { AuthorID int64 `drizzle:\"author_id,bigint,notnull,references=users.id\"` }\nfunc (Post) Table() pg.TableMeta { return pg.TableMeta{Name: \"posts\"} }\n",
+			body: "type Post struct { AuthorID int64 `mist:\"author_id,bigint,notnull,references=users.id\"` }\nfunc (Post) Table() pg.TableMeta { return pg.TableMeta{Name: \"posts\"} }\n",
 			want: "was not found",
 		},
 		{
 			name: "unknown sql type",
-			body: "type User struct { Payload string `drizzle:\"payload,geometry,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { Payload string `mist:\"payload,geometry,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "geometry",
 		},
 		{
 			name: "pk conflicts with PrimaryKey",
-			body: "type User struct { ID int64 `drizzle:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\", PrimaryKey: []string{\"id\"}} }\n",
+			body: "type User struct { ID int64 `mist:\"id,bigserial,pk\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\", PrimaryKey: []string{\"id\"}} }\n",
 			want: "conflict",
 		},
 		{
 			name: "length on text",
-			body: "type User struct { Name string `drizzle:\"name,text,notnull,length=8\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { Name string `mist:\"name,text,notnull,length=8\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "length is only for varchar",
 		},
 		{
 			name: "identity with default",
-			body: "type User struct { ID int64 `drizzle:\"id,bigint,notnull,identity,default=1\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { ID int64 `mist:\"id,bigint,notnull,identity,default=1\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "identity cannot be combined with default",
 		},
 		{
 			name: "cross package embed",
-			body: "type User struct { time.Time `drizzle:\"created_at,timestamptz,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			body: "type User struct { time.Time `mist:\"created_at,timestamptz,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "embedded fields from another package",
 		},
 		{
 			name: "generic struct",
-			body: "type Box[T any] struct { ID int64 `drizzle:\"id,bigint,pk\"` }\nfunc (b Box[T]) Table() pg.TableMeta { return pg.TableMeta{Name: \"boxes\"} }\n",
+			body: "type Box[T any] struct { ID int64 `mist:\"id,bigint,pk\"` }\nfunc (b Box[T]) Table() pg.TableMeta { return pg.TableMeta{Name: \"boxes\"} }\n",
 			want: "generics are not supported",
 		},
 	}
@@ -144,10 +144,10 @@ import (
 )
 
 type Member struct {
-	TenantID int64           ` + "`drizzle:\"tenant_id,bigint,notnull\"`" + `
-	ID       int64           ` + "`drizzle:\"id,bigint,notnull\"`" + `
-	Body     json.RawMessage ` + "`drizzle:\"body,jsonb,notnull\"`" + `
-	Amount   *string         ` + "`drizzle:\"amount,numeric\"`" + `
+	TenantID int64           ` + "`mist:\"tenant_id,bigint,notnull\"`" + `
+	ID       int64           ` + "`mist:\"id,bigint,notnull\"`" + `
+	Body     json.RawMessage ` + "`mist:\"body,jsonb,notnull\"`" + `
+	Amount   *string         ` + "`mist:\"amount,numeric\"`" + `
 }
 
 func (Member) Table() pg.TableMeta {
@@ -199,10 +199,10 @@ func (Member) Table() pg.TableMeta {
 func TestGenerateColumnModifiers(t *testing.T) {
 	body := "package schema\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
 		"type Item struct {\n" +
-		"\tID int64 `drizzle:\"id,bigint,notnull,identity\"`\n" +
-		"\tCode string `drizzle:\"code,varchar,notnull,length=8,unique=items_code_idx\"`\n" +
-		"\tAmount string `drizzle:\"amount,numeric,notnull,precis=20.6\"`\n" +
-		"\tNote *string `drizzle:\"note,text,generated=\\\"upper(code)\\\"\"`\n" +
+		"\tID int64 `mist:\"id,bigint,notnull,identity\"`\n" +
+		"\tCode string `mist:\"code,varchar,notnull,length=8,unique=items_code_idx\"`\n" +
+		"\tAmount string `mist:\"amount,numeric,notnull,precis=20.6\"`\n" +
+		"\tNote *string `mist:\"note,text,generated=\\\"upper(code)\\\"\"`\n" +
 		"}\n\n" +
 		"func (Item) Table() pg.TableMeta { return pg.TableMeta{Name: \"items\"} }\n"
 	dir := t.TempDir()
@@ -232,10 +232,10 @@ func TestGenerateColumnModifiers(t *testing.T) {
 func TestGenerateEmbedsSamePackage(t *testing.T) {
 	body := "package schema\n\nimport \"time\"\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
 		"type timestamps struct {\n" +
-		"\tCreatedAt time.Time `drizzle:\"created_at,timestamptz,notnull,defaultnow\"`\n" +
+		"\tCreatedAt time.Time `mist:\"created_at,timestamptz,notnull,defaultnow\"`\n" +
 		"}\n\n" +
 		"type User struct {\n" +
-		"\tID int64 `drizzle:\"id,bigserial,pk\"`\n" +
+		"\tID int64 `mist:\"id,bigserial,pk\"`\n" +
 		"\ttimestamps\n" +
 		"}\n\n" +
 		"func (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n"
@@ -276,13 +276,13 @@ import (
 )
 
 type Note struct {
-	ID      int64           ` + "`drizzle:\"id,bigint,pk\"`" + `
-	Title   string          ` + "`drizzle:\"title,varchar,notnull,length=32\"`" + `
-	Body    json.RawMessage ` + "`drizzle:\"body,json,notnull\"`" + `
-	Amount  *string         ` + "`drizzle:\"amount,decimal\"`" + `
-	At      time.Time       ` + "`drizzle:\"at,datetime,notnull\"`" + `
-	Payload []byte          ` + "`drizzle:\"payload,blob,notnull\"`" + `
-	Flag    int8            ` + "`drizzle:\"flag,tinyint,notnull\"`" + `
+	ID      int64           ` + "`mist:\"id,bigint,pk\"`" + `
+	Title   string          ` + "`mist:\"title,varchar,notnull,length=32\"`" + `
+	Body    json.RawMessage ` + "`mist:\"body,json,notnull\"`" + `
+	Amount  *string         ` + "`mist:\"amount,decimal\"`" + `
+	At      time.Time       ` + "`mist:\"at,datetime,notnull\"`" + `
+	Payload []byte          ` + "`mist:\"payload,blob,notnull\"`" + `
+	Flag    int8            ` + "`mist:\"flag,tinyint,notnull\"`" + `
 }
 
 func (Note) Table() mysql.TableMeta {
@@ -325,17 +325,17 @@ func TestGenerateMySQLRejects(t *testing.T) {
 	}{
 		{
 			name: "timestamptz",
-			body: "type Note struct { At time.Time `drizzle:\"at,timestamptz,notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
+			body: "type Note struct { At time.Time `mist:\"at,timestamptz,notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
 			want: "has no timestamptz",
 		},
 		{
 			name: "boolean",
-			body: "type Note struct { OK bool `drizzle:\"ok,boolean,notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
+			body: "type Note struct { OK bool `mist:\"ok,boolean,notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
 			want: "has no boolean",
 		},
 		{
 			name: "array",
-			body: "type Note struct { Tags []string `drizzle:\"tags,text[],notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
+			body: "type Note struct { Tags []string `mist:\"tags,text[],notnull\"` }\nfunc (Note) Table() mysql.TableMeta { return mysql.TableMeta{Name: \"notes\"} }\n",
 			want: "has no arrays",
 		},
 	}

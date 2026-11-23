@@ -173,7 +173,7 @@ drizzle-orm 自身没有发布覆盖率阈值（`drizzle-orm/vitest.config.ts` �
 | 包 / 类型 | 内容 |
 |---|---|
 | `pg/types.go` | pg 类型常量与列修饰符：`BigSerial` / `Text` / `Timestamptz` / `Numeric` / `JsonB` / … |
-| `codegen/parser.go` | 解析 `drizzle:"..."` tag |
+| `codegen/parser.go` | 解析 `mist:"..."` tag |
 | `codegen/validate.go` | tag 校验：非法类型名、重复列名、悬空 `references`、自相矛盾的修饰符 |
 | `codegen/emit.go` | 生成 `schema_gen.go` |
 | `codegen/templates/` | `text/template` 模板 |
@@ -182,7 +182,7 @@ drizzle-orm 自身没有发布覆盖率阈值（`drizzle-orm/vitest.config.ts` �
 #### tag 语法（草案）
 
 ```
-`drizzle:"<column_name>,<type>,<modifier>,<modifier>..."`
+`mist:"<column_name>,<type>,<modifier>,<modifier>..."`
 
 修饰符：
   pk | notnull | unique | unique=<name>
