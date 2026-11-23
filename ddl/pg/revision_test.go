@@ -51,6 +51,13 @@ func TestThreeRevisions(t *testing.T) {
 	if again.Name != "" {
 		t.Fatal(again.Name)
 	}
+	firstSnap, err := os.ReadFile(filepath.Join(folder, first.Name, "snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(firstSnap), "email") || strings.Contains(string(firstSnap), second.Name) {
+		t.Fatal("first snapshot was rewritten")
+	}
 	migs, err := migrate.Read(folder)
 	if err != nil {
 		t.Fatal(err)

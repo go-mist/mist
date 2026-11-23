@@ -460,7 +460,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-23） · **粗估**：8 – 12 周（最重） · **依赖**：M1、M6
 
-`mist ddl -migrations -write` 对照 `meta/snapshot.json` 写下一次迁移。`mist migrate` 应用目录。`mist check` 对照快照和每个 `migration.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
+`mist ddl -migrations -write` 在新目录里写下一次 `migration.sql` 和 `snapshot.json`。旧目录不改。`mist migrate` 应用目录。`mist check` 对照快照和每个 `migration.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
 
 #### 目标
 

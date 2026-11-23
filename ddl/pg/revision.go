@@ -1,11 +1,14 @@
 package pg
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-mist/mist/diff"
@@ -19,14 +22,13 @@ type Written struct {
 	Changes []diff.Change
 }
 
+// snapshotFile is the schema after one migration. It sits next to that migration's SQL.
+// PrevIDs names the snapshots this one was generated from. A later migration does not rewrite it.
 type snapshotFile struct {
-	Schema     schema.Schema `json:"schema"`
-	Migrations []snapMig     `json:"migrations"`
-}
-
-type snapMig struct {
-	Name string `json:"name"`
-	Hash string `json:"hash"`
+	ID      string        `json:"id"`
+	PrevIDs []string      `json:"prevIds"`
+	Hash    string        `json:"hash"`
+	Schema  schema.Schema `json:"schema"`
 }
 
 var migrationName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -46,9 +48,9 @@ func Plan(folder string, desired schema.Schema) (string, []diff.Change, error) {
 	return sql, changes, nil
 }
 
-// WriteMigration writes the next change as migration.sql in a subdirectory and updates the snapshot.
-// The snapshot records the schema after this migration, and the sha256 of each migration.sql.
-// It does not write meta/_journal.json. The migrator rejects a whole directory that contains that file.
+// WriteMigration writes the next change as a new directory containing migration.sql and snapshot.json.
+// The snapshot records the schema after this migration, the sha256 of that SQL file, and the id of the snapshot it continues.
+// Earlier directories are left unchanged. It does not write meta/_journal.json. The migrator rejects a directory that contains that file.
 func WriteMigration(folder, name string, at time.Time, desired schema.Schema) (Written, error) {
 	if folder == "" {
 		return Written{}, fmt.Errorf("ddl: missing migrations directory")
@@ -69,6 +71,10 @@ func WriteMigration(folder, name string, at time.Time, desired schema.Schema) (W
 	if sql == "" {
 		return Written{Changes: changes}, nil
 	}
+	head, hasHead, err := current(folder)
+	if err != nil {
+		return Written{}, err
+	}
 	if err := os.MkdirAll(folder, 0o755); err != nil {
 		return Written{}, err
 	}
@@ -80,11 +86,18 @@ func WriteMigration(folder, name string, at time.Time, desired schema.Schema) (W
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		return Written{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), []byte(sql), 0o644); err != nil {
+	sqlBytes := []byte(sql)
+	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), sqlBytes, 0o644); err != nil {
 		os.RemoveAll(dir)
 		return Written{}, err
 	}
-	if err := saveSnapshot(folder, desired); err != nil {
+	sum := sha256.Sum256(sqlBytes)
+	prev := []string{}
+	if hasHead {
+		prev = []string{head.ID}
+	}
+	snap := snapshotFile{ID: dirName, PrevIDs: prev, Hash: hex.EncodeToString(sum[:]), Schema: desired}
+	if err := writeSnapshot(dir, snap); err != nil {
 		os.RemoveAll(dir)
 		return Written{}, err
 	}
@@ -96,87 +109,88 @@ func Check(folder string, desired schema.Schema) ([]diff.Change, error) {
 	if folder == "" {
 		return nil, fmt.Errorf("ddl: missing migrations directory")
 	}
-	snap, ok, err := loadSnapshot(folder)
+	head, ok, err := current(folder)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		has, err := hasMigrations(folder)
-		if err != nil {
-			return nil, err
-		}
-		if has {
-			return nil, fmt.Errorf("ddl: %s already has migrations, but meta/snapshot.json is missing", folder)
-		}
 		return diff.Diff(desired, schema.Schema{}), nil
 	}
-	if err := matchMigrations(folder, snap.Migrations); err != nil {
-		return nil, err
-	}
-	return diff.Diff(desired, snap.Schema), nil
+	return diff.Diff(desired, head.Schema), nil
 }
 
 func baseline(folder string) (schema.Schema, error) {
 	if folder == "" {
 		return schema.Schema{}, nil
 	}
-	snap, ok, err := loadSnapshot(folder)
+	head, ok, err := current(folder)
 	if err != nil {
 		return schema.Schema{}, err
 	}
-	if ok {
-		if err := matchMigrations(folder, snap.Migrations); err != nil {
-			return schema.Schema{}, err
-		}
-		return snap.Schema, nil
+	if !ok {
+		return schema.Schema{}, nil
 	}
-	has, err := hasMigrations(folder)
-	if err != nil {
-		return schema.Schema{}, err
-	}
-	if has {
-		return schema.Schema{}, fmt.Errorf("ddl: %s already has migrations, but meta/snapshot.json is missing", folder)
-	}
-	return schema.Schema{}, nil
+	return head.Schema, nil
 }
 
-func matchMigrations(folder string, want []snapMig) error {
+// current is the snapshot that no later migration continues. The folder is empty when ok is false.
+func current(folder string) (snapshotFile, bool, error) {
+	snaps, err := loadSnapshots(folder)
+	if err != nil || len(snaps) == 0 {
+		return snapshotFile{}, false, err
+	}
+	if err := matchSQL(folder, snaps); err != nil {
+		return snapshotFile{}, false, err
+	}
+	byID := make(map[string]snapshotFile, len(snaps))
+	referenced := map[string]struct{}{}
+	for _, snap := range snaps {
+		byID[snap.ID] = snap
+		for _, prev := range snap.PrevIDs {
+			referenced[prev] = struct{}{}
+		}
+	}
+	for _, snap := range snaps {
+		for _, prev := range snap.PrevIDs {
+			if _, ok := byID[prev]; !ok {
+				return snapshotFile{}, false, fmt.Errorf("ddl: snapshot %s points at missing %s", snap.ID, prev)
+			}
+		}
+	}
+	var heads []string
+	var head snapshotFile
+	for _, snap := range snaps {
+		if _, ok := referenced[snap.ID]; ok {
+			continue
+		}
+		heads = append(heads, snap.ID)
+		head = snap
+	}
+	if len(heads) != 1 {
+		return snapshotFile{}, false, fmt.Errorf("ddl: migrations %s do not have one latest snapshot", strings.Join(heads, ", "))
+	}
+	return head, true, nil
+}
+
+func matchSQL(folder string, snaps []snapshotFile) error {
 	got, err := migrate.Read(folder)
 	if err != nil {
 		return err
 	}
-	if len(got) != len(want) {
-		return fmt.Errorf("ddl: found %d migrations, snapshot has %d", len(got), len(want))
+	byName := make(map[string]string, len(got))
+	for _, mig := range got {
+		byName[mig.Name] = mig.Hash
 	}
-	for i := range want {
-		if got[i].Name != want[i].Name || got[i].Hash != want[i].Hash {
-			return fmt.Errorf("ddl: migration %s does not match the snapshot", got[i].Name)
+	if len(got) != len(snaps) {
+		return fmt.Errorf("ddl: found %d migrations, %d snapshots", len(got), len(snaps))
+	}
+	for _, snap := range snaps {
+		hash, ok := byName[snap.ID]
+		if !ok || hash != snap.Hash {
+			return fmt.Errorf("ddl: migration %s does not match the snapshot", snap.ID)
 		}
 	}
 	return nil
-}
-
-func hasMigrations(folder string) (bool, error) {
-	entries, err := os.ReadDir(folder)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "meta" {
-			continue
-		}
-		_, err := os.Stat(filepath.Join(folder, entry.Name(), "migration.sql"))
-		if err == nil {
-			return true, nil
-		}
-		if !os.IsNotExist(err) {
-			return false, err
-		}
-	}
-	return false, nil
 }
 
 func uniqueFolder(folder string, at time.Time, name string) (string, error) {
@@ -193,42 +207,63 @@ func uniqueFolder(folder string, at time.Time, name string) (string, error) {
 	return "", fmt.Errorf("ddl: every migration directory in this 60-second window already exists")
 }
 
-func loadSnapshot(folder string) (snapshotFile, bool, error) {
-	raw, err := os.ReadFile(filepath.Join(folder, "meta", "snapshot.json"))
+func loadSnapshots(folder string) ([]snapshotFile, error) {
+	entries, err := os.ReadDir(folder)
 	if os.IsNotExist(err) {
-		return snapshotFile{}, false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return snapshotFile{}, false, err
+		return nil, err
 	}
-	var snap snapshotFile
-	if err := json.Unmarshal(raw, &snap); err != nil {
-		return snapshotFile{}, false, fmt.Errorf("ddl: failed to parse snapshot: %w", err)
+	var out []snapshotFile
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == "meta" {
+			continue
+		}
+		sqlPath := filepath.Join(folder, entry.Name(), "migration.sql")
+		snapPath := filepath.Join(folder, entry.Name(), "snapshot.json")
+		_, sqlErr := os.Stat(sqlPath)
+		_, snapErr := os.Stat(snapPath)
+		if os.IsNotExist(sqlErr) && os.IsNotExist(snapErr) {
+			continue
+		}
+		if sqlErr != nil && !os.IsNotExist(sqlErr) {
+			return nil, sqlErr
+		}
+		if snapErr != nil && !os.IsNotExist(snapErr) {
+			return nil, snapErr
+		}
+		if os.IsNotExist(sqlErr) {
+			return nil, fmt.Errorf("ddl: %s/migration.sql is missing", entry.Name())
+		}
+		if os.IsNotExist(snapErr) {
+			return nil, fmt.Errorf("ddl: %s/snapshot.json is missing", entry.Name())
+		}
+		raw, err := os.ReadFile(snapPath)
+		if err != nil {
+			return nil, err
+		}
+		var snap snapshotFile
+		if err := json.Unmarshal(raw, &snap); err != nil {
+			return nil, fmt.Errorf("ddl: failed to parse %s: %w", snapPath, err)
+		}
+		if snap.ID != entry.Name() {
+			return nil, fmt.Errorf("ddl: snapshot %s has id %q", entry.Name(), snap.ID)
+		}
+		out = append(out, snap)
 	}
-	return snap, true, nil
+	return out, nil
 }
 
-func saveSnapshot(folder string, desired schema.Schema) error {
-	migs, err := migrate.Read(folder)
-	if err != nil {
-		return err
-	}
-	snap := snapshotFile{Schema: desired}
-	for _, mig := range migs {
-		snap.Migrations = append(snap.Migrations, snapMig{Name: mig.Name, Hash: mig.Hash})
-	}
+func writeSnapshot(dir string, snap snapshotFile) error {
 	raw, err := json.MarshalIndent(snap, "", "  ")
 	if err != nil {
 		return err
 	}
 	raw = append(raw, '\n')
-	meta := filepath.Join(folder, "meta")
-	if err := os.MkdirAll(meta, 0o755); err != nil {
-		return err
-	}
-	tmp := filepath.Join(meta, "snapshot.json.tmp")
+	tmp := filepath.Join(dir, "snapshot.json.tmp")
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(meta, "snapshot.json"))
+	return os.Rename(tmp, filepath.Join(dir, "snapshot.json"))
 }
