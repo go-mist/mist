@@ -79,7 +79,7 @@ func (s Select[T]) Prepare(ctx context.Context, db Executor) (*PreparedSelect[T]
 	}
 	return &PreparedSelect[T]{
 		statement: st,
-		picked:    append([]Column[T](nil), s.picked...),
+		picked:    s.copyPicked(),
 		table:     s.table,
 	}, nil
 }

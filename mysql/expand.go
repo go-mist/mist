@@ -21,8 +21,43 @@ type embeddedQuery struct {
 
 func (e embeddedQuery) GetSQL() *sql.SQL { return e.body }
 
+// flattenCmp turns a comparison wrapper into its fragment list so ilike rewrite can see the operator.
+func flattenCmp(chunks []sql.Chunk) ([]sql.Chunk, bool) {
+	type comparer interface {
+		Compare() (sql.Chunk, string, any)
+	}
+	changed := false
+	for i, ch := range chunks {
+		if ch == nil {
+			continue
+		}
+		if _, ok := ch.(comparer); !ok {
+			continue
+		}
+		if !changed {
+			chunks = append([]sql.Chunk(nil), chunks...)
+			changed = true
+		}
+		chunks[i] = ch.GetSQL()
+	}
+	return chunks, changed
+}
+
+func hasILike(chunks []sql.Chunk) bool {
+	for _, ch := range chunks {
+		frag, ok := ch.(sql.Fragment)
+		if ok && (frag == " ilike " || frag == " not ilike ") {
+			return true
+		}
+	}
+	return false
+}
+
 // rewriteILike rewrites ilike into lower(left) like lower(right). MySQL has no ilike.
 func rewriteILike(chunks []sql.Chunk) ([]sql.Chunk, bool) {
+	if !hasILike(chunks) {
+		return chunks, false
+	}
 	out := make([]sql.Chunk, 0, len(chunks))
 	changed := false
 	for i := 0; i < len(chunks); i++ {
@@ -59,6 +94,9 @@ func unaliasedSelect(ch sql.Chunk) error {
 func (d Dialect) expandSQL(s *sql.SQL) (*sql.SQL, error) {
 	if s == nil {
 		return nil, nil
+	}
+	if flat, ok := flattenCmp(s.QueryChunks); ok {
+		s = &sql.SQL{QueryChunks: flat}
 	}
 	if next, ok := rewriteILike(s.QueryChunks); ok {
 		s = &sql.SQL{QueryChunks: next}

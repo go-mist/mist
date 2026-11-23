@@ -250,6 +250,10 @@ func sameColumns(left, right []sql.Chunk) error {
 }
 
 func unqualifyCols(expr sql.Chunk) sql.Chunk {
+	if d, ok := expr.(interface{ Direction() (sql.Chunk, string) }); ok {
+		inner, dir := d.Direction()
+		return sql.S(unqualifyCols(inner), sql.Fragment(dir))
+	}
 	if name, ok := colNameOf(expr); ok {
 		return sql.Identifier(name)
 	}

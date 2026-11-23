@@ -15,12 +15,12 @@ func TestComparisons(t *testing.T) {
 		expr *sql.SQL
 		want string
 	}{
-		{"eq", op.Eq(col, 1), `"users"."id" = $1`},
-		{"ne", op.Ne(col, 1), `"users"."id" <> $1`},
-		{"gt", op.Gt(col, 1), `"users"."id" > $1`},
-		{"gte", op.Gte(col, 1), `"users"."id" >= $1`},
-		{"lt", op.Lt(col, 1), `"users"."id" < $1`},
-		{"lte", op.Lte(col, 1), `"users"."id" <= $1`},
+		{"eq", op.Eq(col, 1).GetSQL(), `"users"."id" = $1`},
+		{"ne", op.Ne(col, 1).GetSQL(), `"users"."id" <> $1`},
+		{"gt", op.Gt(col, 1).GetSQL(), `"users"."id" > $1`},
+		{"gte", op.Gte(col, 1).GetSQL(), `"users"."id" >= $1`},
+		{"lt", op.Lt(col, 1).GetSQL(), `"users"."id" < $1`},
+		{"lte", op.Lte(col, 1).GetSQL(), `"users"."id" <= $1`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

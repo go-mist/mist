@@ -31,9 +31,33 @@ func unaliasedSelect(ch sql.Chunk) error {
 	return nil
 }
 
+func flattenCmp(chunks []sql.Chunk) ([]sql.Chunk, bool) {
+	type comparer interface {
+		Compare() (sql.Chunk, string, any)
+	}
+	changed := false
+	for i, ch := range chunks {
+		if ch == nil {
+			continue
+		}
+		if _, ok := ch.(comparer); !ok {
+			continue
+		}
+		if !changed {
+			chunks = append([]sql.Chunk(nil), chunks...)
+			changed = true
+		}
+		chunks[i] = ch.GetSQL()
+	}
+	return chunks, changed
+}
+
 func (d Dialect) expandSQL(s *sql.SQL) (*sql.SQL, error) {
 	if s == nil {
 		return nil, nil
+	}
+	if flat, ok := flattenCmp(s.QueryChunks); ok {
+		s = &sql.SQL{QueryChunks: flat}
 	}
 	chunks := s.QueryChunks
 	changed := false

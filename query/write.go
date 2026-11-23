@@ -99,7 +99,14 @@ type rowNode struct {
 
 // Insert is an immutable insert chain.
 type Insert[T any] struct {
-	table         Table[T]
+	table Table[T]
+	// colBuf and oneRow keep a single small insert on the stack.
+	// cols and tail are used when the statement is wider or has more than one row.
+	colBuf        [4]Column[T]
+	oneRow        [4]any
+	nCols         int
+	nVals         int
+	one           bool
 	cols          []Column[T]
 	tail          *rowNode
 	nothing       bool
@@ -122,7 +129,19 @@ func NewInsert[T any](table Table[T]) Insert[T] {
 // Columns names the columns to write. A later call replaces the previous one.
 // Columns that do not appear here are omitted from the statement and left to the database default. Zero values in the column list are written as given.
 func (ins Insert[T]) Columns(cols ...Column[T]) Insert[T] {
+	if len(cols) <= len(ins.colBuf) {
+		for i, col := range cols {
+			ins.colBuf[i] = col
+		}
+		for i := len(cols); i < len(ins.colBuf); i++ {
+			ins.colBuf[i] = nil
+		}
+		ins.nCols = len(cols)
+		ins.cols = nil
+		return ins
+	}
 	ins.cols = append([]Column[T](nil), cols...)
+	ins.nCols = len(cols)
 	return ins
 }
 
@@ -146,6 +165,21 @@ func (ins Insert[T]) Select(q SelectSource) Insert[T] {
 // Values appends one row. The number of values must match Columns. Repeated calls combine into one multi-row insert.
 // A cell may be a select, rendered as a scalar subquery.
 func (ins Insert[T]) Values(vals ...any) Insert[T] {
+	if ins.tail == nil && !ins.one && len(vals) <= len(ins.oneRow) {
+		for i, v := range vals {
+			ins.oneRow[i] = nullValue(v)
+		}
+		ins.nVals = len(vals)
+		ins.one = true
+		return ins
+	}
+	if ins.one {
+		copied := make([]any, ins.nVals)
+		copy(copied, ins.oneRow[:ins.nVals])
+		ins.tail = &rowNode{vals: copied}
+		ins.one = false
+		ins.nVals = 0
+	}
 	copied := make([]any, len(vals))
 	for i, v := range vals {
 		copied[i] = nullValue(v)
@@ -219,10 +253,15 @@ func (ins Insert[T]) Returning(cols ...Column[T]) Insert[T] {
 
 // Spec expands this chain. Values are restored to call order.
 func (ins Insert[T]) Spec() InsertSpec {
+	cols := ins.cols
+	if cols == nil && ins.nCols > 0 {
+		cols = make([]Column[T], ins.nCols)
+		copy(cols, ins.colBuf[:ins.nCols])
+	}
 	spec := InsertSpec{
 		Table:       ins.table,
-		ColumnNames: columnNames(ins.cols),
-		Encoders:    columnEncoders(ins.cols),
+		ColumnNames: columnNames(cols),
+		Encoders:    columnEncoders(cols),
 		Returning:   columnChunks(ins.returning),
 		With:        append([]WithSpec(nil), ins.withs...),
 		Select:      ins.sel,
@@ -242,6 +281,11 @@ func (ins Insert[T]) Spec() InsertSpec {
 		}
 	}
 	var rows [][]any
+	if ins.one {
+		row := make([]any, ins.nVals)
+		copy(row, ins.oneRow[:ins.nVals])
+		rows = append(rows, row)
+	}
 	for n := ins.tail; n != nil; n = n.prev {
 		rows = append(rows, n.vals)
 	}
@@ -254,7 +298,11 @@ func (ins Insert[T]) Spec() InsertSpec {
 
 // SQL asks the dialect to build the fragments, then renders them into text and parameters.
 func (ins Insert[T]) SQL(d InsertDialect) (sql.Query, error) {
-	built, err := d.BuildInsertQuery(ins.Spec())
+	spec := ins.Spec()
+	if q, ok, err := tryInsert(d, spec); err != nil || ok {
+		return q, err
+	}
+	built, err := d.BuildInsertQuery(spec)
 	if err != nil {
 		return sql.Query{}, err
 	}
@@ -276,7 +324,11 @@ type updateJoin struct {
 
 // Update is an immutable update chain.
 type Update[T any] struct {
-	table     Table[T]
+	table Table[T]
+	// setCols and setVals hold up to four assignments without a heap node.
+	setCols   [4]Column[T]
+	setVals   [4]any
+	nSets     int
 	sets      *setNode[T]
 	from      sql.Chunk
 	joins     *updateJoin
@@ -296,6 +348,20 @@ func NewUpdate[T any](table Table[T]) Update[T] {
 // Set appends one assignment. Calling it again on the same column writes that column once more and does not merge them.
 // Zero values are written as given. nil binds NULL. An SQL fragment enters the statement as written.
 func (u Update[T]) Set(col Column[T], value any) Update[T] {
+	if u.sets == nil && u.nSets < len(u.setCols) {
+		u.setCols[u.nSets] = col
+		u.setVals[u.nSets] = nullValue(value)
+		u.nSets++
+		return u
+	}
+	if u.sets == nil && u.nSets > 0 {
+		var head *setNode[T]
+		for i := u.nSets - 1; i >= 0; i-- {
+			head = &setNode[T]{prev: head, col: u.setCols[i], val: u.setVals[i]}
+		}
+		u.sets = head
+		u.nSets = 0
+	}
 	u.sets = &setNode[T]{prev: u.sets, col: col, val: nullValue(value)}
 	return u
 }
@@ -366,6 +432,16 @@ func (u Update[T]) Returning(cols ...Column[T]) Update[T] {
 // Spec expands this chain. Set is restored to call order.
 func (u Update[T]) Spec() UpdateSpec {
 	sets := assignments(u.sets)
+	if u.sets == nil && u.nSets > 0 {
+		sets = make([]Assignment, u.nSets)
+		for i := 0; i < u.nSets; i++ {
+			name := ""
+			if u.setCols[i] != nil {
+				name = u.setCols[i].ColName()
+			}
+			sets[i] = Assignment{Column: name, Value: u.setVals[i], Encoder: columnEncoder(u.setCols[i])}
+		}
+	}
 	return UpdateSpec{
 		Table:     u.table,
 		Sets:      sets,
@@ -382,7 +458,11 @@ func (u Update[T]) Spec() UpdateSpec {
 
 // SQL asks the dialect to build the fragments, then renders them into text and parameters.
 func (u Update[T]) SQL(d UpdateDialect) (sql.Query, error) {
-	built, err := d.BuildUpdateQuery(u.Spec())
+	spec := u.Spec()
+	if q, ok, err := tryUpdate(d, spec); err != nil || ok {
+		return q, err
+	}
+	built, err := d.BuildUpdateQuery(spec)
 	if err != nil {
 		return sql.Query{}, err
 	}
@@ -520,17 +600,10 @@ func assignments[T any](head *setNode[T]) []Assignment {
 }
 
 func columnEncoder[T any](col Column[T]) sql.Encoder {
-	type encoded interface {
-		DriverEncoder() sql.Encoder
-	}
 	if col == nil {
 		return nil
 	}
-	e, ok := col.(encoded)
-	if !ok {
-		return nil
-	}
-	return e.DriverEncoder()
+	return col.DriverEncoder()
 }
 
 func columnEncoders[T any](cols []Column[T]) []sql.Encoder {
@@ -560,8 +633,12 @@ func columnChunks[T any](cols []Column[T]) []sql.Chunk {
 // nullValue folds a nil pointer or a nil slice into a nil interface so the parameter binds as NULL.
 // Zero values themselves stay: both 0 and "" are written into the SQL.
 func nullValue(v any) any {
-	if v == nil {
-		return nil
+	switch v.(type) {
+	case nil, string, bool, []byte,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64:
+		return v
 	}
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {

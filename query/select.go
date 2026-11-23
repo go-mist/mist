@@ -17,6 +17,8 @@ type Column[T any] interface {
 	sql.Chunk
 	FieldPtr(*T) any
 	ColName() string
+	// DriverEncoder converts a bound value. nil means the value is passed through.
+	DriverEncoder() sql.Encoder
 }
 
 // Table is a from source. Row binds the table to row type T, so From(Posts) cannot fit in Select[User].
@@ -147,13 +149,27 @@ type clause struct {
 }
 
 // Select is an immutable select chain. Methods return a new value and do not change the chain from before the call.
+// where, order, limit, offset, and distinct stay in the struct until a join, set, or other compound clause needs the chain.
 type Select[T any] struct {
-	picked   []Column[T]
-	cols     []sql.Chunk
-	table    Table[T]
-	from     sql.Chunk
-	fromCols []sql.Chunk
-	tail     *clause
+	// pickBuf and colBuf hold up to four columns without a heap slice.
+	// picked and cols are used only when the list is longer.
+	pickBuf    [4]Column[T]
+	colBuf     [4]sql.Chunk
+	nPick      int
+	picked     []Column[T]
+	cols       []sql.Chunk
+	table      Table[T]
+	from       sql.Chunk
+	fromCols   []sql.Chunk
+	where      sql.Chunk
+	order      []sql.Chunk
+	distinctOn []sql.Chunk
+	limit      int
+	offset     int
+	limitSet   bool
+	offsetSet  bool
+	distinct   bool
+	tail       *clause
 }
 
 // GetSQL lets this select be placed inside another statement.
@@ -172,8 +188,8 @@ func (s Select[T]) As(alias string) Subquery[T] {
 
 // Projected is the columns of this select. When no columns were written, it uses every column of the From table.
 func (s Select[T]) Projected() []Column[T] {
-	if len(s.picked) > 0 {
-		return append([]Column[T](nil), s.picked...)
+	if s.nPicked() > 0 {
+		return s.copyPicked()
 	}
 	out := make([]Column[T], 0, len(s.fromCols))
 	for _, ch := range s.fromCols {
@@ -188,19 +204,55 @@ func (s Select[T]) Projected() []Column[T] {
 // NewSelect starts a query. Passing no columns means the whole row; the column list is taken from the table at From.
 // Callers write pg.Select, which forwards here. Go cannot give a function and a type the same name, so the type stays Select.
 func NewSelect[T any](cols ...Column[T]) Select[T] {
-	picked := append([]Column[T](nil), cols...)
-	out := make([]sql.Chunk, len(picked))
-	for i, col := range picked {
-		out[i] = col
+	var s Select[T]
+	if len(cols) <= len(s.pickBuf) {
+		for i, col := range cols {
+			s.pickBuf[i] = col
+			s.colBuf[i] = col
+		}
+		s.nPick = len(cols)
+		return s
 	}
-	return Select[T]{picked: picked, cols: out}
+	s.picked = append([]Column[T](nil), cols...)
+	s.cols = make([]sql.Chunk, len(s.picked))
+	for i, col := range s.picked {
+		s.cols[i] = col
+	}
+	return s
+}
+
+func (s Select[T]) nPicked() int {
+	if s.picked != nil {
+		return len(s.picked)
+	}
+	return s.nPick
+}
+
+func (s Select[T]) copyPicked() []Column[T] {
+	if s.picked != nil {
+		return append([]Column[T](nil), s.picked...)
+	}
+	if s.nPick == 0 {
+		return nil
+	}
+	return append([]Column[T](nil), s.pickBuf[:s.nPick]...)
+}
+
+func (s Select[T]) materialCols() []sql.Chunk {
+	if s.cols != nil || s.nPick == 0 {
+		return s.cols
+	}
+	out := make([]sql.Chunk, s.nPick)
+	copy(out, s.colBuf[:s.nPick])
+	return out
 }
 
 // From sets the source table and fixes the row type as T.
 func (s Select[T]) From(table Table[T]) Select[T] {
 	s.table = table
 	s.from = table
-	if table != nil {
+	// Columns are loaded only for a whole-row select. An explicit column list does not need them.
+	if s.nPicked() == 0 && table != nil {
 		s.fromCols = table.Columns()
 	}
 	return s
@@ -209,25 +261,45 @@ func (s Select[T]) From(table Table[T]) Select[T] {
 // Where sets the condition. A later call replaces the previous one and does not AND them automatically.
 // A nil cond means this query has no where clause.
 func (s Select[T]) Where(cond sql.Chunk) Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseWhere, chunk: cond}
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseWhere, chunk: cond}
+		return s
+	}
+	s.where = cond
 	return s
 }
 
 // OrderBy sets the ordering. A later call replaces the previous one.
 func (s Select[T]) OrderBy(exprs ...sql.Chunk) Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseOrder, chunks: append([]sql.Chunk(nil), exprs...)}
+	copied := append([]sql.Chunk(nil), exprs...)
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseOrder, chunks: copied}
+		return s
+	}
+	s.order = copied
 	return s
 }
 
 // Distinct makes the select use distinct. A later call replaces distinct on.
 func (s Select[T]) Distinct() Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseDistinct}
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseDistinct}
+		return s
+	}
+	s.distinct = true
+	s.distinctOn = nil
 	return s
 }
 
 // DistinctOn produces distinct on (cols). A later call replaces the previous one.
 func (s Select[T]) DistinctOn(cols ...sql.Chunk) Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseDistinct, chunks: append([]sql.Chunk{}, cols...)}
+	copied := append([]sql.Chunk{}, cols...)
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseDistinct, chunks: copied}
+		return s
+	}
+	s.distinct = true
+	s.distinctOn = copied
 	return s
 }
 
@@ -244,6 +316,7 @@ func (s Select[T]) ForShare(locks ...RowLock) Select[T] {
 }
 
 func (s Select[T]) forLock(share bool, locks ...RowLock) Select[T] {
+	s = s.seal()
 	lock := RowLock{Share: share}
 	if len(locks) == 1 {
 		lock = locks[0]
@@ -256,18 +329,29 @@ func (s Select[T]) forLock(share bool, locks ...RowLock) Select[T] {
 
 // Limit sets the limit. Limit(0) renders as LIMIT 0.
 func (s Select[T]) Limit(n int) Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseLimit, n: n}
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseLimit, n: n}
+		return s
+	}
+	s.limit = n
+	s.limitSet = true
 	return s
 }
 
 // Offset sets the offset. Offset(0) renders as OFFSET 0.
 func (s Select[T]) Offset(n int) Select[T] {
-	s.tail = &clause{prev: s.tail, kind: clauseOffset, n: n}
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseOffset, n: n}
+		return s
+	}
+	s.offset = n
+	s.offsetSet = true
 	return s
 }
 
 // GroupBy sets the grouping. A later call replaces the previous one. Passing no expressions means there is no group by.
 func (s Select[T]) GroupBy(exprs ...sql.Chunk) Select[T] {
+	s = s.seal()
 	s.tail = &clause{prev: s.tail, kind: clauseGroup, chunks: append([]sql.Chunk(nil), exprs...)}
 	return s
 }
@@ -275,6 +359,7 @@ func (s Select[T]) GroupBy(exprs ...sql.Chunk) Select[T] {
 // Having sets the condition after grouping. A later call replaces the previous one.
 // A nil cond means this query has no having clause.
 func (s Select[T]) Having(cond sql.Chunk) Select[T] {
+	s = s.seal()
 	s.tail = &clause{prev: s.tail, kind: clauseHaving, chunk: cond}
 	return s
 }
@@ -300,6 +385,7 @@ func (s Select[T]) Except(other Select[T]) Select[T] { return s.addSet("except",
 func (s Select[T]) ExceptAll(other Select[T]) Select[T] { return s.addSet("except all", other) }
 
 func (s Select[T]) addSet(op string, other Select[T]) Select[T] {
+	s = s.seal()
 	s.tail = &clause{prev: s.tail, kind: clauseSet, setOp: op, right: other.Spec()}
 	return s
 }
@@ -307,6 +393,7 @@ func (s Select[T]) addSet(op string, other Select[T]) Select[T] {
 // With adds CTEs in front of the statement. Repeated calls keep them in the order written.
 // If any CTE is recursive, the keyword is with recursive.
 func (s Select[T]) With(ctes ...WithSource) Select[T] {
+	s = s.seal()
 	s.tail = &clause{prev: s.tail, kind: clauseWith, withs: snapshotWith(ctes)}
 	return s
 }
@@ -354,7 +441,39 @@ func (s Select[T]) CrossJoin(table sql.Chunk) Select[T] {
 }
 
 func (s Select[T]) addJoin(kind JoinKind, table, on sql.Chunk) Select[T] {
+	s = s.seal()
 	s.tail = &clause{prev: s.tail, kind: clauseJoin, join: kind, chunk: table, on: on}
+	return s
+}
+
+// seal moves the inline clauses onto the chain so a later compound clause keeps call order.
+func (s Select[T]) seal() Select[T] {
+	if s.tail != nil {
+		return s
+	}
+	var tail *clause
+	if s.where != nil {
+		tail = &clause{prev: tail, kind: clauseWhere, chunk: s.where}
+	}
+	if len(s.order) > 0 {
+		tail = &clause{prev: tail, kind: clauseOrder, chunks: s.order}
+	}
+	if s.distinct || len(s.distinctOn) > 0 {
+		tail = &clause{prev: tail, kind: clauseDistinct, chunks: s.distinctOn}
+	}
+	if s.limitSet {
+		tail = &clause{prev: tail, kind: clauseLimit, n: s.limit}
+	}
+	if s.offsetSet {
+		tail = &clause{prev: tail, kind: clauseOffset, n: s.offset}
+	}
+	s.tail = tail
+	s.where = nil
+	s.order = nil
+	s.distinctOn = nil
+	s.distinct = false
+	s.limitSet = false
+	s.offsetSet = false
 	return s
 }
 
@@ -363,7 +482,26 @@ func (s Select[T]) addJoin(kind JoinKind, table, on sql.Chunk) Select[T] {
 // Ordering and limit written before a set operation stay on the left-hand query.
 // Anything written after one particular set operation is recorded on that operation.
 func (s Select[T]) Spec() SelectSpec {
-	spec := foldSelect(s.from, s.cols, s.tail)
+	cols := s.materialCols()
+	if s.tail == nil {
+		spec := SelectSpec{
+			Columns:    cols,
+			From:       s.from,
+			Where:      s.where,
+			OrderBy:    s.order,
+			Limit:      s.limit,
+			LimitSet:   s.limitSet,
+			Offset:     s.offset,
+			OffsetSet:  s.offsetSet,
+			Distinct:   s.distinct,
+			DistinctOn: s.distinctOn,
+		}
+		if len(spec.Columns) == 0 {
+			spec.Columns = s.fromCols
+		}
+		return spec
+	}
+	spec := foldSelect(s.from, cols, s.tail)
 	if len(spec.Columns) == 0 {
 		spec.Columns = s.fromCols
 	}
@@ -479,9 +617,5 @@ func buildSpec(from sql.Chunk, cols []sql.Chunk, tail *clause) SelectSpec {
 
 // SQL asks the dialect to build the fragments, then renders them into text and parameters.
 func (s Select[T]) SQL(d SelectDialect) (sql.Query, error) {
-	built, err := d.BuildSelectQuery(s.Spec())
-	if err != nil {
-		return sql.Query{}, err
-	}
-	return sql.Render(built, d, sql.RenderConfig{})
+	return finishSelect(d, s.Spec())
 }

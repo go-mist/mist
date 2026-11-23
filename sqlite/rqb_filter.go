@@ -71,17 +71,17 @@ func fieldFilter(table *relation.Table, alias string, f relation.Filter) (*sql.S
 	ref := colRef(alias, col.Name)
 	switch f.Op {
 	case "eq":
-		return op.Eq(ref, f.Value), nil
+		return op.Eq(ref, f.Value).GetSQL(), nil
 	case "ne":
-		return op.Ne(ref, f.Value), nil
+		return op.Ne(ref, f.Value).GetSQL(), nil
 	case "gt":
-		return op.Gt(ref, f.Value), nil
+		return op.Gt(ref, f.Value).GetSQL(), nil
 	case "gte":
-		return op.Gte(ref, f.Value), nil
+		return op.Gte(ref, f.Value).GetSQL(), nil
 	case "lt":
-		return op.Lt(ref, f.Value), nil
+		return op.Lt(ref, f.Value).GetSQL(), nil
 	case "lte":
-		return op.Lte(ref, f.Value), nil
+		return op.Lte(ref, f.Value).GetSQL(), nil
 	case "like":
 		return op.Like(ref, f.Value), nil
 	case "ilike":

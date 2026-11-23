@@ -25,7 +25,7 @@ func TestAggregates(t *testing.T) {
 		{"avg distinct", op.AvgDistinct(id), `avg(distinct "users"."id")`},
 		{"min", op.Min(id), `min("users"."id")`},
 		{"max", op.Max(id), `max("users"."id")`},
-		{"order", op.Desc(op.Count(id)), `count("users"."id") desc`},
+		{"order", op.Desc(op.Count(id)).GetSQL(), `count("users"."id") desc`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

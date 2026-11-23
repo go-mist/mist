@@ -15,6 +15,7 @@ import (
 	"github.com/xbmlz/mist/op"
 	mist "github.com/xbmlz/mist/sqlite"
 	"gorm.io/gorm"
+	gormlog "gorm.io/gorm/logger"
 
 	"github.com/xbmlz/mist/bench/ent"
 	"github.com/xbmlz/mist/bench/ent/user"
@@ -22,23 +23,20 @@ import (
 	_ "github.com/glebarez/go-sqlite"
 )
 
-// The same statement for every library:
-//
-//	select id, name, age from users where age > ? order by id asc limit 20
-//
-// sqlx has no query builder. Its build benchmark only assembles the SQL string and the argument.
-// ent's build benchmark uses ent's SQL builder. Scan and concurrent execution use the generated client.
+// The same four operations as the usual Go ORM comparison
+// (efectn/go-orm-benchmarks): insert one row, update one row,
+// read one row by primary key, and read a 100-row slice.
+// Each library is called through its own API inside the loop.
+// The benchmark does not prepare a statement ahead of the timer.
 
 const (
-	rowsN = 200
-	ageGT = 10
-	limit = 20
-	query = "select id, name, age from users where age > ? order by id asc limit ?"
+	rowsN  = 100
+	sliceN = 100
 )
 
 type row struct {
 	bun.BaseModel `bun:"table:users"`
-	ID            int64  `db:"id" gorm:"column:id;primaryKey" bun:"id,pk"`
+	ID            int64  `db:"id" gorm:"column:id;primaryKey;autoIncrement" bun:"id,pk,autoincrement"`
 	Name          string `db:"name" gorm:"column:name" bun:"name"`
 	Age           int64  `db:"age" gorm:"column:age" bun:"age"`
 }
@@ -64,225 +62,254 @@ func seed(tb testing.TB) string {
 	if _, err := db.Exec(`pragma journal_mode=wal`); err != nil {
 		tb.Fatal(err)
 	}
+	if _, err := db.Exec(`pragma synchronous=off`); err != nil {
+		tb.Fatal(err)
+	}
 	return path
 }
 
-var (
-	sinkSQL  string
-	sinkArgs []any
-)
-
-func BenchmarkBuild(b *testing.B) {
+func BenchmarkInsert(b *testing.B) {
+	ctx := context.Background()
 	b.Run("mist", func(b *testing.B) {
-		d := mist.Dialect{}
+		db := openMist(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			q, err := mist.Select(users.ID, users.Name, users.Age).
-				From(users).
-				Where(op.Gt(users.Age, ageGT)).
-				OrderBy(op.Asc(users.ID)).
-				Limit(limit).
-				SQL(d)
+			_, err := mist.Insert(users).Columns(users.Name, users.Age).Values("n", int64(20)).Exec(ctx, db)
 			if err != nil {
 				b.Fatal(err)
 			}
-			sinkSQL, sinkArgs = q.SQL, q.Params
 		}
 	})
-
 	b.Run("sqlx", func(b *testing.B) {
+		db := openSQLX(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			sinkSQL = query
-			sinkArgs = []any{ageGT, limit}
+			if _, err := db.Exec(`insert into users (name, age) values (?, ?)`, "n", int64(20)); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
-
 	b.Run("gorm", func(b *testing.B) {
 		db := openGorm(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			sinkSQL = db.ToSQL(func(tx *gorm.DB) *gorm.DB {
-				var out []row
-				return tx.Model(&row{}).Where("age > ?", ageGT).Order("id asc").Limit(limit).Find(&out)
-			})
+			if err := db.Create(&row{Name: "n", Age: 20}).Error; err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
-
 	b.Run("ent", func(b *testing.B) {
+		client := openEnt(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			s := entsql.Dialect(dialect.SQLite).
-				Select("id", "name", "age").
-				From(entsql.Table("users")).
-				Where(entsql.GT("age", ageGT)).
-				OrderBy(entsql.Asc("id")).
-				Limit(limit)
-			sinkSQL, sinkArgs = s.Query()
+			if err := client.User.Create().SetName("n").SetAge(20).Exec(ctx); err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
-
 	b.Run("bun", func(b *testing.B) {
 		db := openBun(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			q := db.NewSelect().Model((*row)(nil)).Column("id", "name", "age").
-				Where("age > ?", ageGT).Order("id ASC").Limit(limit)
-			sinkSQL = q.String()
+			_, err := db.NewInsert().Model(&row{Name: "n", Age: 20}).Exec(ctx)
+			if err != nil {
+				b.Fatal(err)
+			}
 		}
 	})
 }
 
-func BenchmarkScan(b *testing.B) {
-	path := seed(b)
+func BenchmarkUpdate(b *testing.B) {
 	ctx := context.Background()
-
 	b.Run("mist", func(b *testing.B) {
-		db := openMist(b, path)
+		db := openMist(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			out, err := mist.Select(users.ID, users.Name, users.Age).
-				From(users).
-				Where(op.Gt(users.Age, ageGT)).
-				OrderBy(op.Asc(users.ID)).
-				All(ctx, db)
-			if err != nil || len(out) == 0 {
-				b.Fatalf("%v rows=%d", err, len(out))
+			_, err := mist.Update(users).Set(users.Name, "n").Set(users.Age, int64(21)).Where(op.Eq(users.ID, int64(1))).Exec(ctx, db)
+			if err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
-
 	b.Run("sqlx", func(b *testing.B) {
-		db := openSQLX(b, path)
+		db := openSQLX(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			var out []row
-			if err := db.Select(&out, "select id, name, age from users where age > ? order by id asc", ageGT); err != nil || len(out) == 0 {
-				b.Fatalf("%v rows=%d", err, len(out))
+			if _, err := db.Exec(`update users set name = ?, age = ? where id = ?`, "n", int64(21), int64(1)); err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
-
 	b.Run("gorm", func(b *testing.B) {
-		db := openGorm(b, path)
+		db := openGorm(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			var out []row
-			if err := db.Where("age > ?", ageGT).Order("id asc").Find(&out).Error; err != nil || len(out) == 0 {
-				b.Fatalf("%v rows=%d", err, len(out))
+			err := db.Model(&row{}).Where("id = ?", int64(1)).Updates(map[string]any{"name": "n", "age": int64(21)}).Error
+			if err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
-
 	b.Run("ent", func(b *testing.B) {
-		client := openEnt(b, path)
+		client := openEnt(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			out, err := client.User.Query().Where(user.AgeGT(ageGT)).Order(user.ByID()).All(ctx)
-			if err != nil || len(out) == 0 {
-				b.Fatalf("%v rows=%d", err, len(out))
+			err := client.User.UpdateOneID(1).SetName("n").SetAge(21).Exec(ctx)
+			if err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
-
 	b.Run("bun", func(b *testing.B) {
-		db := openBun(b, path)
+		db := openBun(b, seed(b))
 		b.ReportAllocs()
 		for b.Loop() {
-			var out []row
-			err := db.NewSelect().Model(&out).Column("id", "name", "age").Where("age > ?", ageGT).Order("id ASC").Scan(ctx)
-			if err != nil || len(out) == 0 {
-				b.Fatalf("%v rows=%d", err, len(out))
+			_, err := db.NewUpdate().Model((*row)(nil)).Set("name = ?", "n").Set("age = ?", int64(21)).Where("id = ?", int64(1)).Exec(ctx)
+			if err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
 }
 
-func BenchmarkConcurrent(b *testing.B) {
-	path := seed(b)
+func BenchmarkRead(b *testing.B) {
 	ctx := context.Background()
-
 	b.Run("mist", func(b *testing.B) {
-		db := openMist(b, path)
+		db := openMist(b, seed(b))
 		b.ReportAllocs()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				out, err := mist.Select(users.ID, users.Name, users.Age).
-					From(users).
-					Where(op.Gt(users.Age, ageGT)).
-					OrderBy(op.Asc(users.ID)).
-					Limit(limit).
-					All(ctx, db)
-				if err != nil || len(out) != limit {
-					b.Fatalf("%v rows=%d", err, len(out))
-				}
+		for b.Loop() {
+			out, err := mist.Select(users.ID, users.Name, users.Age).From(users).Where(op.Eq(users.ID, int64(1))).Take(ctx, db)
+			if err != nil || out.ID != 1 {
+				b.Fatalf("%v id=%d", err, out.ID)
 			}
-		})
+		}
 	})
-
 	b.Run("sqlx", func(b *testing.B) {
-		db := openSQLX(b, path)
+		db := openSQLX(b, seed(b))
 		b.ReportAllocs()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				var out []row
-				if err := db.Select(&out, query, ageGT, limit); err != nil || len(out) != limit {
-					b.Fatalf("%v rows=%d", err, len(out))
-				}
+		for b.Loop() {
+			var out row
+			if err := db.Get(&out, `select id, name, age from users where id = ?`, int64(1)); err != nil || out.ID != 1 {
+				b.Fatalf("%v id=%d", err, out.ID)
 			}
-		})
+		}
 	})
-
 	b.Run("gorm", func(b *testing.B) {
-		db := openGorm(b, path)
+		db := openGorm(b, seed(b))
 		b.ReportAllocs()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				var out []row
-				err := db.Where("age > ?", ageGT).Order("id asc").Limit(limit).Find(&out).Error
-				if err != nil || len(out) != limit {
-					b.Fatalf("%v rows=%d", err, len(out))
-				}
+		for b.Loop() {
+			var out row
+			if err := db.Where("id = ?", int64(1)).Take(&out).Error; err != nil || out.ID != 1 {
+				b.Fatalf("%v id=%d", err, out.ID)
 			}
-		})
+		}
 	})
-
 	b.Run("ent", func(b *testing.B) {
-		client := openEnt(b, path)
+		client := openEnt(b, seed(b))
 		b.ReportAllocs()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				out, err := client.User.Query().Where(user.AgeGT(ageGT)).Limit(limit).All(ctx)
-				if err != nil || len(out) != limit {
-					b.Fatalf("%v rows=%d", err, len(out))
-				}
+		for b.Loop() {
+			out, err := client.User.Get(ctx, 1)
+			if err != nil || out.ID != 1 {
+				b.Fatalf("%v", err)
 			}
-		})
+		}
 	})
-
 	b.Run("bun", func(b *testing.B) {
-		db := openBun(b, path)
+		db := openBun(b, seed(b))
 		b.ReportAllocs()
-		b.RunParallel(func(pb *testing.PB) {
-			for pb.Next() {
-				var out []row
-				err := db.NewSelect().Model(&out).Column("id", "name", "age").
-					Where("age > ?", ageGT).Order("id ASC").Limit(limit).Scan(ctx)
-				if err != nil || len(out) != limit {
-					b.Fatalf("%v rows=%d", err, len(out))
-				}
+		for b.Loop() {
+			var out row
+			err := db.NewSelect().Model(&out).Where("id = ?", int64(1)).Limit(1).Scan(ctx)
+			if err != nil || out.ID != 1 {
+				b.Fatalf("%v id=%d", err, out.ID)
 			}
-		})
+		}
 	})
 }
 
-func TestScanOnce(t *testing.T) {
+func BenchmarkReadSlice(b *testing.B) {
+	ctx := context.Background()
+	b.Run("mist", func(b *testing.B) {
+		db := openMist(b, seed(b))
+		b.ReportAllocs()
+		for b.Loop() {
+			out, err := mist.Select(users.ID, users.Name, users.Age).From(users).Where(op.Gt(users.ID, int64(0))).Limit(sliceN).All(ctx, db)
+			if err != nil || len(out) != sliceN {
+				b.Fatalf("%v rows=%d", err, len(out))
+			}
+		}
+	})
+	b.Run("sqlx", func(b *testing.B) {
+		db := openSQLX(b, seed(b))
+		b.ReportAllocs()
+		for b.Loop() {
+			var out []row
+			err := db.Select(&out, `select id, name, age from users where id > ? limit ?`, int64(0), sliceN)
+			if err != nil || len(out) != sliceN {
+				b.Fatalf("%v rows=%d", err, len(out))
+			}
+		}
+	})
+	b.Run("gorm", func(b *testing.B) {
+		db := openGorm(b, seed(b))
+		b.ReportAllocs()
+		for b.Loop() {
+			var out []row
+			err := db.Where("id > ?", int64(0)).Limit(sliceN).Find(&out).Error
+			if err != nil || len(out) != sliceN {
+				b.Fatalf("%v rows=%d", err, len(out))
+			}
+		}
+	})
+	b.Run("ent", func(b *testing.B) {
+		client := openEnt(b, seed(b))
+		b.ReportAllocs()
+		for b.Loop() {
+			out, err := client.User.Query().Where(user.IDGT(0)).Limit(sliceN).All(ctx)
+			if err != nil || len(out) != sliceN {
+				b.Fatalf("%v rows=%d", err, len(out))
+			}
+		}
+	})
+	b.Run("bun", func(b *testing.B) {
+		db := openBun(b, seed(b))
+		b.ReportAllocs()
+		for b.Loop() {
+			var out []row
+			err := db.NewSelect().Model(&out).Where("id > ?", int64(0)).Limit(sliceN).Scan(ctx)
+			if err != nil || len(out) != sliceN {
+				b.Fatalf("%v rows=%d", err, len(out))
+			}
+		}
+	})
+}
+
+func TestRoundTrip(t *testing.T) {
+	ctx := context.Background()
 	path := seed(t)
-	ctx := context.Background()
 	db := openMist(t, path)
-	out, err := mist.Select(users.ID, users.Name, users.Age).From(users).Where(op.Gt(users.Age, ageGT)).All(ctx, db)
-	if err != nil || len(out) == 0 {
-		t.Fatalf("%v rows=%d", err, len(out))
+	if _, err := mist.Insert(users).Columns(users.Name, users.Age).Values("n", int64(20)).Exec(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mist.Update(users).Set(users.Name, "n").Where(op.Eq(users.ID, int64(1))).Exec(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	one, err := mist.Select(users.ID, users.Name, users.Age).From(users).Where(op.Eq(users.ID, int64(1))).One(ctx, db)
+	if err != nil || one.Name != "n" {
+		t.Fatalf("%v %#v", err, one)
+	}
+	all, err := mist.Select(users.ID, users.Name, users.Age).From(users).Where(op.Gt(users.ID, int64(0))).Limit(sliceN).All(ctx, db)
+	if err != nil || len(all) != sliceN {
+		t.Fatalf("%v rows=%d", err, len(all))
+	}
+}
+
+func tune(tb testing.TB, db *sql.DB) {
+	tb.Helper()
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if _, err := db.Exec(`pragma synchronous=off`); err != nil {
+		tb.Fatal(err)
 	}
 }
 
@@ -292,7 +319,7 @@ func openMist(tb testing.TB, path string) *mist.DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	db.SQLDB().SetMaxOpenConns(8)
+	tune(tb, db.SQLDB())
 	tb.Cleanup(func() { _ = db.Close() })
 	return db
 }
@@ -303,14 +330,18 @@ func openSQLX(tb testing.TB, path string) *sqlx.DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	db.SetMaxOpenConns(8)
+	tune(tb, db.DB)
 	tb.Cleanup(func() { _ = db.Close() })
 	return db
 }
 
 func openGorm(tb testing.TB, path string) *gorm.DB {
 	tb.Helper()
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{
+		SkipDefaultTransaction: true,
+		PrepareStmt:            false,
+		Logger:                 gormlog.Default.LogMode(gormlog.Silent),
+	})
 	if err != nil {
 		tb.Fatal(err)
 	}
@@ -318,7 +349,7 @@ func openGorm(tb testing.TB, path string) *gorm.DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	sqlDB.SetMaxOpenConns(8)
+	tune(tb, sqlDB)
 	tb.Cleanup(func() { _ = sqlDB.Close() })
 	return db
 }
@@ -329,7 +360,7 @@ func openBun(tb testing.TB, path string) *bun.DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	sqldb.SetMaxOpenConns(8)
+	tune(tb, sqldb)
 	db := bun.NewDB(sqldb, sqlitedialect.New())
 	tb.Cleanup(func() { _ = db.Close() })
 	return db
@@ -341,7 +372,7 @@ func openEnt(tb testing.TB, path string) *ent.Client {
 	if err != nil {
 		tb.Fatal(err)
 	}
-	sqldb.SetMaxOpenConns(8)
+	tune(tb, sqldb)
 	drv := entsql.OpenDB(dialect.SQLite, sqldb)
 	client := ent.NewClient(ent.Driver(drv))
 	tb.Cleanup(func() { _ = client.Close() })

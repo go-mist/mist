@@ -1,6 +1,8 @@
 package sqlite
 
 import (
+	"unsafe"
+
 	"github.com/xbmlz/mist/query"
 	"github.com/xbmlz/mist/sql"
 )
@@ -55,6 +57,12 @@ type TableBase struct {
 	SQLName string
 }
 
+// Ident returns the table name. The table part is empty because this value is the table.
+func (b TableBase) Ident() (table, name string) { return "", b.SQLName }
+
+// StablePtr is the address of this table. Only a pointer value has it, so a copied table is not cached.
+func (b *TableBase) StablePtr() uintptr { return uintptr(unsafe.Pointer(b)) }
+
 // GetSQL implements sql.Chunk.
 func (b TableBase) GetSQL() *sql.SQL {
 	return sql.S(sql.Identifier(b.SQLName))
@@ -72,6 +80,12 @@ type Col[T, V any] struct {
 	// When Codec is nil, this column passes through. Scan and bind do no type conversion.
 	Codec sql.Encoder
 }
+
+// Ident returns the table and column names. An empty table means a bare identifier.
+func (c Col[T, V]) Ident() (table, name string) { return c.Table, c.Name }
+
+// StablePtr is the address of this column. Only a pointer value has it, so a copied column is not cached.
+func (c *Col[T, V]) StablePtr() uintptr { return uintptr(unsafe.Pointer(c)) }
 
 // GetSQL renders the column as "table"."column". An empty table name renders only the column name.
 func (c Col[T, V]) GetSQL() *sql.SQL {

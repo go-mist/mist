@@ -76,7 +76,9 @@ func (db *DB) Query(ctx context.Context, query string, args ...any) (query.Rows,
 	if db.sqldb == nil {
 		return nil, errors.New("sqlite: no connection pool")
 	}
-	logger.Log(db.logger, query, args)
+	if db.logger != nil {
+		logger.Log(db.logger, query, args)
+	}
 	rows, err := db.sqldb.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -89,7 +91,9 @@ func (db *DB) Exec(ctx context.Context, query string, args ...any) (int64, error
 	if db.sqldb == nil {
 		return 0, errors.New("sqlite: no connection pool")
 	}
-	logger.Log(db.logger, query, args)
+	if db.logger != nil {
+		logger.Log(db.logger, query, args)
+	}
 	return execResult(db.sqldb.ExecContext(ctx, query, args...))
 }
 

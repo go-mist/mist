@@ -34,6 +34,9 @@ func (s *SQL) InlineParams() *SQL {
 	return s
 }
 
+// ParamsInlined reports whether parameters are written into the SQL text.
+func (s *SQL) ParamsInlined() bool { return s != nil && s.shouldInlineParams }
+
 // If returns the receiver when cond is true, otherwise (*SQL)(nil).
 // Matches drizzle's if; callers usually feed the result straight into And/Or/S.
 //

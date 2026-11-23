@@ -7,22 +7,22 @@ package op
 import "github.com/xbmlz/mist/sql"
 
 // Eq renders `left = right`. right is bound as a parameter.
-func Eq(left sql.Chunk, right any) *sql.SQL { return cmp(left, " = ", right) }
+func Eq(left sql.Chunk, right any) sql.Chunk { return cmp(left, " = ", right) }
 
 // Ne renders `left <> right`.
-func Ne(left sql.Chunk, right any) *sql.SQL { return cmp(left, " <> ", right) }
+func Ne(left sql.Chunk, right any) sql.Chunk { return cmp(left, " <> ", right) }
 
 // Gt renders `left > right`.
-func Gt(left sql.Chunk, right any) *sql.SQL { return cmp(left, " > ", right) }
+func Gt(left sql.Chunk, right any) sql.Chunk { return cmp(left, " > ", right) }
 
 // Gte renders `left >= right`.
-func Gte(left sql.Chunk, right any) *sql.SQL { return cmp(left, " >= ", right) }
+func Gte(left sql.Chunk, right any) sql.Chunk { return cmp(left, " >= ", right) }
 
 // Lt renders `left < right`.
-func Lt(left sql.Chunk, right any) *sql.SQL { return cmp(left, " < ", right) }
+func Lt(left sql.Chunk, right any) sql.Chunk { return cmp(left, " < ", right) }
 
 // Lte renders `left <= right`.
-func Lte(left sql.Chunk, right any) *sql.SQL { return cmp(left, " <= ", right) }
+func Lte(left sql.Chunk, right any) sql.Chunk { return cmp(left, " <= ", right) }
 
 // And joins conditions with and and skips nil. The meaning matches sql.And.
 func And(conditions ...sql.Chunk) *sql.SQL { return sql.And(conditions...) }
@@ -34,10 +34,61 @@ func Or(conditions ...sql.Chunk) *sql.SQL { return sql.Or(conditions...) }
 func Not(condition sql.Chunk) *sql.SQL { return sql.Not(condition) }
 
 // Asc renders `expr asc`.
-func Asc(expr sql.Chunk) *sql.SQL { return sql.S(expr, sql.Fragment(" asc")) }
+func Asc(expr sql.Chunk) sql.Chunk { return &sortExpr{expr: expr, dir: " asc"} }
 
 // Desc renders `expr desc`.
-func Desc(expr sql.Chunk) *sql.SQL { return sql.S(expr, sql.Fragment(" desc")) }
+func Desc(expr sql.Chunk) sql.Chunk { return &sortExpr{expr: expr, dir: " desc"} }
+
+// pred is one comparison. The chunk list is built only when a dialect renders the slow path.
+type pred struct {
+	left  sql.Chunk
+	op    string
+	right any
+}
+
+// GetSQL implements sql.Chunk.
+func (p *pred) GetSQL() *sql.SQL {
+	if p == nil {
+		return nil
+	}
+	return sql.S(p.left, sql.Fragment(p.op), bindEncoded(p.left, p.right))
+}
+
+// ShouldOmitSQLParens keeps the comparison from being wrapped in parentheses.
+func (*pred) ShouldOmitSQLParens() bool { return true }
+
+// Compare exposes the comparison to a dialect fast path.
+func (p *pred) Compare() (sql.Chunk, string, any) {
+	if p == nil {
+		return nil, "", nil
+	}
+	return p.left, p.op, p.right
+}
+
+// sortExpr is one ordering. The chunk list is built only when a dialect renders the slow path.
+type sortExpr struct {
+	expr sql.Chunk
+	dir  string
+}
+
+// GetSQL implements sql.Chunk.
+func (s *sortExpr) GetSQL() *sql.SQL {
+	if s == nil {
+		return nil
+	}
+	return sql.S(s.expr, sql.Fragment(s.dir))
+}
+
+// ShouldOmitSQLParens keeps the ordering from being wrapped in parentheses.
+func (*sortExpr) ShouldOmitSQLParens() bool { return true }
+
+// Direction exposes the ordering to a dialect fast path.
+func (s *sortExpr) Direction() (sql.Chunk, string) {
+	if s == nil {
+		return nil, ""
+	}
+	return s.expr, s.dir
+}
 
 // In renders `left in (query)`. query is a select, or SQL that is already written.
 // A list uses InArray. Go cannot take both argument kinds in one function.
@@ -179,6 +230,6 @@ func existsQuery(keyword string, query sql.Chunk) *sql.SQL {
 	return sql.S(sql.Fragment(keyword), query)
 }
 
-func cmp(left sql.Chunk, operator string, right any) *sql.SQL {
-	return sql.S(left, sql.Fragment(operator), bindEncoded(left, right))
+func cmp(left sql.Chunk, operator string, right any) sql.Chunk {
+	return &pred{left: left, op: operator, right: right}
 }

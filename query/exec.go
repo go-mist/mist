@@ -46,54 +46,84 @@ type Executor interface {
 // All executes the select and returns every row. It returns nil when there are no rows.
 // With no columns it uses the generated whole-row scan. With columns it fills only those fields and leaves the rest at the zero value.
 func (s Select[T]) All(ctx context.Context, db Executor) ([]T, error) {
-	rows, err := queryRows(ctx, db, func() (*sql.SQL, error) {
-		return db.BuildSelectQuery(s.Spec())
-	})
+	rows, err := s.rows(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var dest []any
-	if len(s.picked) > 0 {
-		dest = make([]any, len(s.picked))
+	if n := s.nPicked(); n > 0 {
+		dest = make([]any, n)
 	}
 	var out []T
+	var zero T
 	for rows.Next() {
-		item, err := s.scanInto(rows, dest)
-		if err != nil {
+		out = append(out, zero)
+		if err := s.scanAt(rows, &out[len(out)-1], dest); err != nil {
 			return nil, err
 		}
-		out = append(out, item)
 	}
 	return out, rows.Err()
 }
 
+// Take returns the first row. No rows returns ErrNoRows. Further rows are ignored.
+func (s Select[T]) Take(ctx context.Context, db Executor) (T, error) {
+	rows, err := s.rows(ctx, db)
+	var zero T
+	if err != nil {
+		return zero, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return zero, err
+		}
+		return zero, ErrNoRows
+	}
+	var buf [8]any
+	var dest []any
+	if n := s.nPicked(); n > 0 {
+		if n <= len(buf) {
+			dest = buf[:n]
+		} else {
+			dest = make([]any, n)
+		}
+	}
+	item, err := s.scanInto(rows, dest)
+	return item, err
+}
+
 // One executes the select and requires exactly one row. No rows returns ErrNoRows. Multiple rows returns ErrManyRows.
 func (s Select[T]) One(ctx context.Context, db Executor) (T, error) {
-	rows, err := queryRows(ctx, db, func() (*sql.SQL, error) {
-		return db.BuildSelectQuery(s.Spec())
-	})
+	rows, err := s.rows(ctx, db)
 	var zero T
 	if err != nil {
 		return zero, err
 	}
 	defer rows.Close()
 	return oneRow(rows, func(row sql.Row) (T, error) {
-		return s.scanInto(row, make([]any, len(s.picked)))
+		return s.scanInto(row, make([]any, s.nPicked()))
 	})
 }
 
 func (s Select[T]) scanInto(row sql.Row, dest []any) (T, error) {
 	var item T
-	if len(s.picked) == 0 {
-		if s.table == nil {
-			return item, errors.New("query: select is missing from")
-		}
-		err := s.table.Scan(row, &item)
-		return item, err
-	}
-	item, err := scanCols(row, s.picked, dest)
+	err := s.scanAt(row, &item, dest)
 	return item, err
+}
+
+func (s Select[T]) scanAt(row sql.Row, dst *T, dest []any) error {
+	n := s.nPicked()
+	if n == 0 {
+		if s.table == nil {
+			return errors.New("query: select is missing from")
+		}
+		return s.table.Scan(row, dst)
+	}
+	if s.picked != nil {
+		return fillCols(row, s.picked, dst, dest)
+	}
+	return fillCols(row, s.pickBuf[:n], dst, dest)
 }
 
 // Exec executes the insert. When Returning is set, use All or One instead.
@@ -101,8 +131,18 @@ func (ins Insert[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 	if len(ins.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
+	if n, ok, err := ins.tryFastExec(ctx, db); ok {
+		return n, err
+	}
+	spec := ins.Spec()
+	if q, ok, err := tryInsert(db, spec); err != nil || ok {
+		if err != nil {
+			return 0, err
+		}
+		return db.Exec(ctx, q.SQL, q.Params...)
+	}
 	return execSQL(ctx, db, func() (*sql.SQL, error) {
-		return db.BuildInsertQuery(ins.Spec())
+		return db.BuildInsertQuery(spec)
 	})
 }
 
@@ -132,8 +172,18 @@ func (u Update[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 	if len(u.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
+	if n, ok, err := u.tryFastExec(ctx, db); ok {
+		return n, err
+	}
+	spec := u.Spec()
+	if q, ok, err := tryUpdate(db, spec); err != nil || ok {
+		if err != nil {
+			return 0, err
+		}
+		return db.Exec(ctx, q.SQL, q.Params...)
+	}
 	return execSQL(ctx, db, func() (*sql.SQL, error) {
-		return db.BuildUpdateQuery(u.Spec())
+		return db.BuildUpdateQuery(spec)
 	})
 }
 
@@ -197,12 +247,12 @@ func allCols[T any](ctx context.Context, db Executor, cols []Column[T], build fu
 	defer rows.Close()
 	dest := make([]any, len(cols))
 	var out []T
+	var zero T
 	for rows.Next() {
-		item, err := scanCols(rows, cols, dest)
-		if err != nil {
+		out = append(out, zero)
+		if err := fillCols(rows, cols, &out[len(out)-1], dest); err != nil {
 			return nil, err
 		}
-		out = append(out, item)
 	}
 	return out, rows.Err()
 }
@@ -243,15 +293,75 @@ func oneRow[T any](rows Rows, scan func(sql.Row) (T, error)) (T, error) {
 
 func scanCols[T any](row sql.Row, cols []Column[T], dest []any) (T, error) {
 	var item T
+	err := fillCols(row, cols, &item, dest)
+	return item, err
+}
+
+func fillCols[T any](row sql.Row, cols []Column[T], dst *T, dest []any) error {
 	for i, col := range cols {
-		ptr := col.FieldPtr(&item)
+		ptr := col.FieldPtr(dst)
 		if ptr == nil {
-			return item, fmt.Errorf("query: column %s has no field pointer", col.ColName())
+			return fmt.Errorf("query: column %s has no field pointer", col.ColName())
 		}
 		dest[i] = ptr
 	}
-	err := row.Scan(dest...)
-	return item, err
+	return row.Scan(dest...)
+}
+
+func (s Select[T]) rows(ctx context.Context, db Executor) (Rows, error) {
+	if rows, ok, err := s.tryFastQuery(ctx, db); ok {
+		return rows, err
+	}
+	q, err := finishSelect(db, s.Spec())
+	if err != nil {
+		return nil, err
+	}
+	return db.Query(ctx, q.SQL, q.Params...)
+}
+
+type selectRenderer interface {
+	RenderSelect(SelectSpec) (sql.Query, bool, error)
+}
+
+type insertRenderer interface {
+	RenderInsert(InsertSpec) (sql.Query, bool, error)
+}
+
+type updateRenderer interface {
+	RenderUpdate(UpdateSpec) (sql.Query, bool, error)
+}
+
+func finishSelect(d interface {
+	dialect.Dialect
+	BuildSelectQuery(SelectSpec) (*sql.SQL, error)
+}, spec SelectSpec) (sql.Query, error) {
+	if r, ok := d.(selectRenderer); ok {
+		q, done, err := r.RenderSelect(spec)
+		if err != nil || done {
+			return q, err
+		}
+	}
+	built, err := d.BuildSelectQuery(spec)
+	if err != nil {
+		return sql.Query{}, err
+	}
+	return sql.Render(built, d, sql.RenderConfig{})
+}
+
+func tryInsert(d dialect.Dialect, spec InsertSpec) (sql.Query, bool, error) {
+	r, ok := d.(insertRenderer)
+	if !ok {
+		return sql.Query{}, false, nil
+	}
+	return r.RenderInsert(spec)
+}
+
+func tryUpdate(d dialect.Dialect, spec UpdateSpec) (sql.Query, bool, error) {
+	r, ok := d.(updateRenderer)
+	if !ok {
+		return sql.Query{}, false, nil
+	}
+	return r.RenderUpdate(spec)
 }
 
 func queryRows(ctx context.Context, db Executor, build func() (*sql.SQL, error)) (Rows, error) {
