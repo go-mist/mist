@@ -1,15 +1,15 @@
-// Package entity 保存 drizzle 的 entityKind 在 Go 里的等价物。
+// Package entity holds the Go equivalent of drizzle's entityKind.
 //
-// drizzle 用 entityKind 符号做运行时类型识别（is(value, Table)、chunkKindOf）。
-// Go 的类型身份由编译器保证，is(...) 退化为类型断言，chunkKindOf 退化为类型
-// switch。这里保留 Kind 只是为了让“分派结果”能作为值传递与断言，例如 M2 的
-// bindIfParam 需要先判断一个值是否已经是 param/placeholder/column/table/view。
+// drizzle uses the entityKind symbol for runtime type recognition (is(value, Table), chunkKindOf).
+// Go's type identity is guaranteed by the compiler, so is(...) reduces to a type assertion and chunkKindOf reduces to a type
+// switch. Kind is kept only so a dispatch result can be passed around as a value and asserted on; for example M2's
+// bindIfParam must first decide whether a value is already a param/placeholder/column/table/view.
 package entity
 
 import "fmt"
 
-// Kind 标识一个值在 SQL 片段流里的角色。
-// 取值顺序与 drizzle-orm v1.0.0-rc.5 的 chunkKinds 一一对应。
+// Kind identifies a value's role in an SQL fragment stream.
+// The value order matches chunkKinds in drizzle-orm v1.0.0-rc.5 one to one.
 type Kind uint8
 
 const (

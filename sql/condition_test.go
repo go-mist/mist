@@ -3,18 +3,18 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/sql"
 )
 
-// 本文件对应 drizzle-orm v1.0.0-rc.5 的
-// drizzle-orm/tests/sql-builder.test.ts。
+// This file corresponds to drizzle-orm v1.0.0-rc.5's
+// drizzle-orm/tests/sql-builder.test.ts.
 //
-// drizzle 的用例里直接用 pgTable 构造列；M1 之前用 testColumn 代替，
-// 它渲染出与 drizzle 完全相同的 `"users"."id"` 文本。
-// 每个用例名保持与上游一致，便于逐条对账。
+// drizzle's cases build columns directly with pgTable; before M1, testColumn stands in,
+// and it renders the exact same `"users"."id"` text as drizzle.
+// Each case name matches upstream so they can be checked one by one.
 
-// eqExpr 手工构造 drizzle 里 eq(users.id, <v>) 的等价片段。
-// M2 的 Eq 会返回同样的 chunk 流。
+// eqExpr hand-builds the fragment equivalent to drizzle's eq(users.id, <v>).
+// M2's Eq returns the same chunk stream.
 func eqExpr(value any) *sql.SQL {
 	return sql.S(testColumn(`"users"."id"`), sql.Fragment(" = "), value)
 }
@@ -71,7 +71,7 @@ func TestSqlBuilderNOTConditionsNotWrappedForNonSQL(t *testing.T) {
 }
 
 func TestSqlBuilderEmptyConditions(t *testing.T) {
-	// drizzle 的 and/or 没有条件时返回 undefined；Go 返回 nil。
+	// drizzle's and/or return undefined when there are no conditions; Go returns nil.
 	if got := sql.And(); got != nil {
 		t.Fatalf("And() = %#v, want nil", got)
 	}
@@ -81,14 +81,14 @@ func TestSqlBuilderEmptyConditions(t *testing.T) {
 	if got := sql.Not(nil); got != nil {
 		t.Fatalf("Not(nil) = %#v, want nil", got)
 	}
-	// 只剩 nil 条件时同样为空。
+	// When only nil conditions remain, the result is empty as well.
 	if got := sql.And(nil, sql.S(sql.Raw("x")).If(false)); got != nil {
 		t.Fatalf("And(all nil) = %#v, want nil", got)
 	}
 }
 
 func TestSqlBuilderSingleCondition(t *testing.T) {
-	// 单个条件原样包一层，不添加任何括号。
+	// A single condition is wrapped as-is, with no parentheses added.
 	query := sql.And(sql.Raw("a = 1"))
 	got := mustRender(t, query, sql.RenderConfig{})
 	if want := "a = 1"; got.SQL != want {
@@ -97,7 +97,7 @@ func TestSqlBuilderSingleCondition(t *testing.T) {
 }
 
 func TestSqlBuilderNotSQLWrapping(t *testing.T) {
-	// 非 SQL 的 wrapper 走自己的渲染分支；没有省略括号契约时交给 wrapper 加括号。
+	// A non-SQL wrapper takes its own render branch; without an omit-parentheses contract, the wrapper adds the parentheses.
 	got := mustRender(t, sql.Not(quotedWrapper{inner: sql.Raw("x")}), sql.RenderConfig{})
 	if want := "not (x)"; got.SQL != want {
 		t.Fatalf("got %s want %s", got.SQL, want)

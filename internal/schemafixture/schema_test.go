@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestUsersSQL(t *testing.T) {
@@ -34,7 +34,7 @@ func TestUsersScan(t *testing.T) {
 		t.Fatalf("scan = %#v", user)
 	}
 
-	// Ptr 必须指向这一行的字段，扫描计划不经过反射。
+	// Ptr must point at a field of this row. The scan plan does not use reflection.
 	if got := Users.Name.Ptr(&user); got != &user.Name {
 		t.Fatalf("Name.Ptr = %p, want %p", got, &user.Name)
 	}

@@ -3,8 +3,8 @@ package pg_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestColAndTableRender(t *testing.T) {

@@ -3,7 +3,7 @@ package entity_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/entity"
+	"github.com/xbmlz/mist/entity"
 )
 
 func TestKindString(t *testing.T) {
@@ -31,7 +31,7 @@ func TestKindString(t *testing.T) {
 		}
 	}
 
-	// 越界值也要有可读输出，不能 panic —— 它通常来自版本不匹配的调试信息。
+	// An out-of-range value must also have a readable output and must not panic — it usually comes from version-mismatch debug info.
 	if got := entity.Kind(200).String(); got != "entity.Kind(200)" {
 		t.Fatalf("out-of-range Kind.String() = %q", got)
 	}

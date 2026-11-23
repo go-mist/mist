@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestEscapeName(t *testing.T) {
@@ -36,7 +36,7 @@ func TestEscapeParam(t *testing.T) {
 		{99, "$100"},
 	}
 	for _, tt := range tests {
-		// value 参数在 pg 上被忽略，传 nil 与真实值结果相同。
+		// The value argument is ignored on pg; nil and a real value produce the same result.
 		if got := d.EscapeParam(tt.num, nil); got != tt.want {
 			t.Fatalf("EscapeParam(%d) = %s, want %s", tt.num, got, tt.want)
 		}

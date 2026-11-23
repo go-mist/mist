@@ -8,106 +8,107 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xbmlz/drizzle-go/entity"
-	"github.com/xbmlz/drizzle-go/sql/dialect"
+	"github.com/xbmlz/mist/entity"
+	"github.com/xbmlz/mist/sql/dialect"
 )
 
-// Chunk 是 SQL 片段流里的一个元素。
+// Chunk is one element of an SQL fragment stream.
 //
-// 对应 drizzle-orm v1.0.0-rc.5 的 SQLChunk。drizzle 用类型并集表达，Go 用接口：
-// 凡是能产出 SQL 的值都是 Chunk —— 这与 drizzle 的 SQLWrapper 契约一致
-// （isSQLWrapper 判的就是 typeof value.getSQL === 'function'）。
+// It corresponds to SQLChunk in drizzle-orm v1.0.0-rc.5. drizzle expresses it as a type union; Go uses an interface:
+// any value that can produce SQL is a Chunk — the same contract as drizzle's SQLWrapper
+// (isSQLWrapper checks typeof value.getSQL === 'function').
 //
-// 与 drizzle 的一处刻意差异：drizzle 允许裸标量出现在 chunk 流里（运行时才包成
-// Param），而 Go 的 Chunk 接口要求 GetSQL，所以标量由 S(...) 在构造时包成 Param。
-// 结果是同一件事，但类型上更早暴露问题。
+// One deliberate difference from drizzle: drizzle allows bare scalars in the chunk stream (wrapped as
+// Param only at runtime), while Go's Chunk interface requires GetSQL, so S(...) wraps scalars as Param at construction time.
+// The result is the same thing, but type problems surface earlier.
 type Chunk interface {
 	GetSQL() *SQL
 }
 
-// Wrapper 是 Chunk 的别名，drizzle 里这个角色叫 SQLWrapper。
+// Wrapper is an alias of Chunk; drizzle calls this role SQLWrapper.
 type Wrapper = Chunk
 
-// Fragment 是一段字面 SQL 文本：原样输出，不做转义、不加引号、不绑定参数。
+// Fragment is literal SQL text: emitted as-is, with no escaping, no quoting, and no parameter binding.
 //
-// 对应 drizzle 的 StringChunk。多数时候你不直接构造它，而是用 Raw("...")。
+// It corresponds to drizzle's StringChunk. Most of the time you do not construct it directly; use Raw("...").
 type Fragment string
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (f Fragment) GetSQL() *SQL { return &SQL{QueryChunks: []Chunk{f}} }
 
-// Name 是一个需要按方言转义的标识符（表名、列名、别名、索引名）。
+// Name is an identifier that must be escaped per dialect (table name, column name, alias, index name).
 //
-// 对应 drizzle 的 Name。与 Fragment 的区别只有一条：
-// Name 会经过 Dialect.EscapeName，Fragment 不会。
+// It corresponds to drizzle's Name. The only difference from Fragment is:
+// Name goes through Dialect.EscapeName; Fragment does not.
 type Name string
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (n Name) GetSQL() *SQL { return &SQL{QueryChunks: []Chunk{n}} }
 
-// Param 是一个待绑定的参数值。
+// Param is a parameter value waiting to be bound.
 //
-// Encoder 为 nil 时等价于 drizzle 的 noopEncoder：值原样进参数列表。
-// 注意 Param 的 Value 可以是 *SQL（此时整个片段被展开而不是绑定），
-// 也可以是 *Placeholder（此时占位符本身进参数列表，留待 FillPlaceholders 填充）。
+// A nil Encoder is equivalent to drizzle's noopEncoder: the value enters the parameter list as-is.
+// Note that Param.Value may be *SQL (the whole fragment is expanded instead of bound),
+// or *Placeholder (the placeholder itself enters the parameter list, to be filled later by FillPlaceholders).
 type Param struct {
 	Value   any
 	Encoder Encoder
 }
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (p *Param) GetSQL() *SQL { return &SQL{QueryChunks: []Chunk{p}} }
 
-// Placeholder 是一个命名占位符，执行前由 FillPlaceholders 替换成真实值。
+// Placeholder is a named placeholder, replaced with a real value by FillPlaceholders before execution.
 //
-// 对应 drizzle 的 Placeholder。
+// It corresponds to drizzle's Placeholder.
 type Placeholder struct {
 	Name string
 }
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (p *Placeholder) GetSQL() *SQL { return &SQL{QueryChunks: []Chunk{p}} }
 
-// Alias 给一段 SQL 起一个字段名（select 列表里的 `expr as "alias"`）。
+// Alias gives a piece of SQL a field name (`expr as "alias"` in a select list).
 //
-// 对应 drizzle 的 SQL.Aliased。Origin 对应 drizzle 的 origin：带表别名时，
-// 渲染为 origin.alias 而不是裸 alias。
+// It corresponds to drizzle's SQL.Aliased. Origin corresponds to drizzle's origin: when a table alias is present,
+// it renders as origin.alias rather than a bare alias.
 type Alias struct {
 	SQL        *SQL
 	FieldAlias string
 	Origin     string
 }
 
-// GetSQL 实现 Chunk。注意 drizzle 这里返回的是被别名的 SQL 本身。
+// GetSQL implements Chunk. Note that drizzle returns the aliased SQL itself here.
 func (a *Alias) GetSQL() *SQL { return a.SQL }
 
-// Subquery 是一个派生表或 CTE。
+// Subquery is a derived table or CTE.
 //
-// 对应 drizzle 的 Subquery。IsWith 为 true 时只渲染别名（CTE 在 with 子句里
-// 已经定义过），否则渲染为 `(select ...) "alias"`。
+// It corresponds to drizzle's Subquery. When IsWith is true only the alias is rendered (the CTE was
+// already defined in the with clause); otherwise it renders as `(select ...) "alias"`.
 type Subquery struct {
 	SQL       *SQL
 	AliasName string
 	IsWith    bool
 }
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (s *Subquery) GetSQL() *SQL { return s.SQL }
 
-// ValueRows 是一次插入的多行值：渲染为 `(...), (...), (...)`。
+// ValueRows is the multi-row values of one insert: rendered as `(...), (...), (...)`.
 //
-// 对应 drizzle 的 ValueRows。Cells 是扁平的行主序值列表，Encoders 是每一列的
-// 编码器；宽度取自 len(Encoders)，用于决定在哪里换行。
+// It corresponds to drizzle's ValueRows. Cells is a flat row-major list of values, and Encoders holds
+// one encoder per column; the width is len(Encoders) and decides where to wrap.
 //
-// 与 drizzle 的差异：drizzle 的 Cells 是 unknown[]，渲染时对每个元素按 chunk
-// 类型分派；这里允许 Cells 里直接放 Fragment / *SQL，便于插入表达式。
+// Difference from drizzle: drizzle's Cells is unknown[], and each element is dispatched by chunk
+// type at render time; here Cells may hold Fragment / *SQL / *Placeholder directly.
+// Placeholders stay in the parameter list and are filled by FillPlaceholders before execution.
 type ValueRows struct {
 	Cells    []any
 	Encoders []Encoder
 }
 
-// GetSQL 实现 Chunk。保留 drizzle 的同名兼容壳：不认 ValueRows 的构建器
-// 通过它仍能得到等价的 SQL。
+// GetSQL implements Chunk. Keeps drizzle's same-named compatibility shim: a builder that does not know ValueRows
+// can still obtain equivalent SQL through it.
 func (v *ValueRows) GetSQL() *SQL {
 	chunks := make([]Chunk, 0, len(v.Cells)+2)
 	for i, cell := range v.Cells {
@@ -128,41 +129,51 @@ func (v *ValueRows) GetSQL() *SQL {
 	return &SQL{QueryChunks: chunks}
 }
 
-// ShouldOmitSQLParens 实现可选的省略括号契约：ValueRows 自带括号。
+// ShouldOmitSQLParens implements the optional omit-parentheses contract: ValueRows already includes parentheses.
 func (v *ValueRows) ShouldOmitSQLParens() bool { return true }
 
-// List 是一组被括号包裹、逗号分隔的片段：`(a, b, c)`。
+// List is a group of fragments wrapped in parentheses and separated by commas: `(a, b, c)`.
 //
-// 对应渲染器里的 Array.isArray(chunk) 分支。drizzle 没有为它定义类型，
-// 数组走的是内联分支；Go 用命名类型显式表达，避免反射散落在渲染器里。
+// It corresponds to the Array.isArray(chunk) branch in the renderer. drizzle does not define a type for it;
+// arrays take an inline branch. Go expresses it with a named type so reflection does not scatter through the renderer.
 type List []Chunk
 
-// GetSQL 实现 Chunk。
+// GetSQL implements Chunk.
 func (l List) GetSQL() *SQL { return &SQL{QueryChunks: l} }
 
-// Encoder 把 Go 值映射成驱动参数。
+// Encoder maps a Go value to a driver parameter.
 //
-// 对应 drizzle 的 DriverValueEncoder。drizzle 通过 mapToDriverValue.isNoop
-// 属性判断是否无需转换，Go 用 IsNoop 方法表达；两者语义相同：
-// IsNoop 为 true 时渲染器跳过映射，省掉一次无意义的函数调用。
+// It corresponds to drizzle's DriverValueEncoder. drizzle decides whether conversion is unnecessary via the mapToDriverValue.isNoop
+// property; Go expresses that with the IsNoop method. The semantics are the same:
+// when IsNoop is true the renderer skips the mapping and saves a meaningless function call.
+// A nil encoder is a pass-through as well.
 type Encoder interface {
 	MapToDriverValue(value any) any
 	IsNoop() bool
 }
 
-// NoopEncoder 原样透传，对应 drizzle 的 noopEncoder。
+// ParamCodec is a typed encoder. The renderer calls it when IsNoop is false:
+// NormalizeParam rewrites the parameter value, and CastParam appends a suffix to the placeholder (for example $1::numeric).
+// An empty string from CastParam means no suffix. dimensions is the array dimensionality; a scalar is 0.
+type ParamCodec interface {
+	NormalizeParam(value any, dimensions int) (any, error)
+	CastParam(placeholder string, dimensions int) string
+	Dimensions() int
+}
+
+// NoopEncoder passes values through unchanged, matching drizzle's noopEncoder.
 type NoopEncoder struct{}
 
-// MapToDriverValue 原样返回。
+// MapToDriverValue returns the value unchanged.
 func (NoopEncoder) MapToDriverValue(value any) any { return value }
 
-// IsNoop 恒为 true。
+// IsNoop is always true.
 func (NoopEncoder) IsNoop() bool { return true }
 
-// KindOf 返回一个值在片段流里的角色，对应 drizzle 的 chunkKindOf。
+// KindOf returns a value's role in the fragment stream, matching drizzle's chunkKindOf.
 //
-// 与 drizzle 的差异：drizzle 缓存数字 kind 到原型上，Go 直接做类型断言 ——
-// 没有字符串比较，也不需要缓存。
+// Difference from drizzle: drizzle caches a numeric kind on the prototype; Go type-asserts directly —
+// no string comparison, and no cache.
 func KindOf(ch Chunk) entity.Kind {
 	switch ch.(type) {
 	case Fragment:
@@ -186,10 +197,10 @@ func KindOf(ch Chunk) entity.Kind {
 	}
 }
 
-// isNilChunk 识别“装进接口的 nil 指针”。
+// isNilChunk recognizes a nil pointer stored in an interface.
 //
-// Go 特有的坑：If(false) 返回 (*SQL)(nil)，把它塞进 Chunk 接口后接口本身不为 nil。
-// 渲染器与 And/Or 都必须把它当作缺失，与 drizzle 的 undefined 等价。
+// A Go-specific pitfall: If(false) returns (*SQL)(nil), and once that is stored in a Chunk interface the interface itself is not nil.
+// The renderer and And/Or must treat it as missing, equivalent to drizzle's undefined.
 func isNilChunk(ch Chunk) bool {
 	if ch == nil {
 		return true
@@ -204,15 +215,20 @@ func valueRowsCell(cell any, enc Encoder) Chunk {
 		return x
 	case *SQL:
 		return x
+	case *Placeholder:
+		if enc != nil && !enc.IsNoop() {
+			return &Param{Value: x, Encoder: enc}
+		}
+		return x
 	default:
 		return &Param{Value: cell, Encoder: enc}
 	}
 }
 
-// FillPlaceholders 用 values 填充 params 里的占位符，返回新的参数列表。
+// FillPlaceholders fills placeholders in params with values and returns a new parameter list.
 //
-// 对应 drizzle 的 fillPlaceholders：直接占位符整项替换；包在 Param 里的占位符
-// 先经过编码器再替换。缺失的占位符是错误，不是静默的 nil。
+// Matches drizzle's fillPlaceholders: a direct placeholder is replaced wholesale; a placeholder wrapped in Param
+// goes through the encoder before replacement. A missing placeholder is an error, not a silent nil.
 func FillPlaceholders(params []any, values map[string]any) ([]any, error) {
 	filled := make([]any, len(params))
 	for i, p := range params {
@@ -238,7 +254,15 @@ func FillPlaceholders(params []any, values map[string]any) ([]any, error) {
 				continue
 			}
 			if v.Encoder != nil && !v.Encoder.IsNoop() {
-				value = v.Encoder.MapToDriverValue(value)
+				if pc, ok := v.Encoder.(ParamCodec); ok {
+					var err error
+					value, err = pc.NormalizeParam(value, pc.Dimensions())
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					value = v.Encoder.MapToDriverValue(value)
+				}
 			}
 			filled[i] = value
 		default:
@@ -248,7 +272,7 @@ func FillPlaceholders(params []any, values map[string]any) ([]any, error) {
 	return filled, nil
 }
 
-// renderer 是 Render 的内部状态。字段与 drizzle collectSQL 的可变累加量对应。
+// renderer is Render's internal state. Its fields correspond to the mutable accumulators in drizzle's collectSQL.
 type renderer struct {
 	d      dialect.Dialect
 	cfg    RenderConfig
@@ -258,36 +282,36 @@ type renderer struct {
 	err    error
 }
 
-// Query 是渲染结果：最终 SQL 文本与绑定参数。
+// Query is a render result: the final SQL text and the bound parameters.
 type Query struct {
 	SQL    string
 	Params []any
 }
 
-// RenderConfig 对应 drizzle 的 BuildQueryConfig，只保留 Go 用得到的字段。
+// RenderConfig corresponds to drizzle's BuildQueryConfig, keeping only the fields Go uses.
 //
-// 刻意没有移植的两个字段（记录在 ROADMAP 的差异登记里）：
-//   - tagged：drizzle 用它为 Bun.SQL 产出 _sql 片段数组，Go 没有等价需求；
-//   - invokeSource：mssql / 索引元数据专用的分派开关，M0 是纯 pg。
+// Two fields deliberately not ported (recorded in the ROADMAP difference log):
+//   - tagged: drizzle uses it to produce a _sql fragment array for Bun.SQL; Go has no equivalent need;
+//   - invokeSource: a dispatch switch specific to mssql / index metadata; M0 is pg only.
 //
-// Codecs 钩子在 M4 接进来：目前的渲染路径等价于“所有列都使用 noop 编码器”。
+// A column with a nil encoder is a pass-through. A column that implements ParamCodec and is not a noop converts the parameter and appends a type suffix.
 type RenderConfig struct {
-	// ParamStart 是第一个绑定参数的序号（0 起算）。pg 渲染成 $1、$2……
+	// ParamStart is the index of the first bound parameter (starting at 0). pg renders it as $1, $2, ...
 	ParamStart int
-	// InlineParams 把参数直接内联进 SQL 文本，用于调试输出与 DDL。
+	// InlineParams inlines parameters directly into the SQL text, for debug output and DDL.
 	InlineParams bool
 }
 
-// ErrNilDialect 表示渲染时没有提供方言。
+// ErrNilDialect means no dialect was provided at render time.
 var ErrNilDialect = errors.New("sql: nil dialect")
 
-// Render 把一段 SQL 渲染成 (SQL 文本, 参数列表)。
+// Render renders a piece of SQL into (SQL text, parameter list).
 //
-// 对应 drizzle 的 buildQueryFromSourceParams。执行顺序与 drizzle 完全一致：
-// 递归进入嵌套 SQL、按 chunk 类型分派、必要时绑定参数或内联参数。
+// It corresponds to drizzle's buildQueryFromSourceParams. The execution order matches drizzle exactly:
+// recurse into nested SQL, dispatch by chunk type, and bind or inline parameters when needed.
 //
-// 返回 error 而不是 panic：内联模式下遇到无法格式化的值（drizzle 会 throw），
-// 在 Go 里应当是可传播的错误。
+// It returns an error rather than panicking: a value that cannot be formatted in inline mode (drizzle would throw)
+// should be a propagatable error in Go.
 func Render(s *SQL, d dialect.Dialect, cfg RenderConfig) (Query, error) {
 	if d == nil {
 		return Query{}, ErrNilDialect
@@ -303,7 +327,7 @@ func Render(s *SQL, d dialect.Dialect, cfg RenderConfig) (Query, error) {
 	return Query{SQL: r.buf.String(), Params: r.params}, nil
 }
 
-// collect 对应 drizzle 的 collectSQL。
+// collect corresponds to drizzle's collectSQL.
 func (r *renderer) collect(chunks []Chunk, inline bool) {
 	for _, ch := range chunks {
 		if r.err != nil {
@@ -337,16 +361,31 @@ func (r *renderer) collect(chunks []Chunk, inline bool) {
 	}
 }
 
-// collectParam 对应 chunkKinds.param 分支。
+// collectParam corresponds to the chunkKinds.param branch.
 func (r *renderer) collectParam(p *Param, inline bool) {
-	// 参数值本身是 SQL 时展开，不绑定（drizzle 的 valueKind === sql 分支）。
+	// When the parameter value itself is SQL, expand it and do not bind (drizzle's valueKind === sql branch).
 	if nested, ok := p.Value.(*SQL); ok && nested != nil {
 		r.collect(nested.QueryChunks, inline || nested.shouldInlineParams)
 		return
 	}
-	// 参数值是占位符时，占位符本身进参数列表，执行前才填充。
+	// When the parameter value is a placeholder, the placeholder itself enters the parameter list and is filled only before execution.
+	// When the column has a codec, the type suffix is written into the SQL first and the value is converted at fill time.
 	if ph, ok := p.Value.(*Placeholder); ok && ph != nil {
-		r.writePlaceholder(ph)
+		escaped := r.d.EscapeParam(r.next, ph)
+		if p.Encoder != nil && !p.Encoder.IsNoop() {
+			if pc, ok := p.Encoder.(ParamCodec); ok {
+				if cast := pc.CastParam(escaped, pc.Dimensions()); cast != "" {
+					escaped = cast
+				}
+			}
+			r.buf.WriteString(escaped)
+			r.next++
+			r.params = append(r.params, p)
+			return
+		}
+		r.buf.WriteString(escaped)
+		r.next++
+		r.params = append(r.params, ph)
 		return
 	}
 	r.collectBoundValue(p.Value, p.Encoder, inline)
@@ -358,31 +397,46 @@ func (r *renderer) writePlaceholder(ph *Placeholder) {
 	r.params = append(r.params, ph)
 }
 
-// collectBoundValue 对应 drizzle 的 collectBoundValue。
+// collectBoundValue corresponds to drizzle's collectBoundValue.
 func (r *renderer) collectBoundValue(value any, enc Encoder, inline bool) {
 	mapped := value
-	if value != nil {
-		if enc != nil && !enc.IsNoop() {
+	var pc ParamCodec
+	useCodec := value != nil && enc != nil && !enc.IsNoop()
+	if useCodec {
+		if cast, ok := enc.(ParamCodec); ok {
+			pc = cast
+			got, err := pc.NormalizeParam(value, pc.Dimensions())
+			if err != nil {
+				r.err = err
+				return
+			}
+			mapped = got
+		} else {
 			mapped = enc.MapToDriverValue(value)
 		}
 		if nested, ok := mapped.(*SQL); ok && nested != nil {
 			r.collect(nested.QueryChunks, inline || nested.shouldInlineParams)
 			return
 		}
-		// TODO(M4): 在这里接 normalizeParam。
 	}
 	if inline {
 		r.writeInline(mapped)
 		return
 	}
-	r.buf.WriteString(r.d.EscapeParam(r.next, mapped))
+	escaped := r.d.EscapeParam(r.next, mapped)
+	if pc != nil {
+		if cast := pc.CastParam(escaped, pc.Dimensions()); cast != "" {
+			escaped = cast
+		}
+	}
+	r.buf.WriteString(escaped)
 	r.next++
 	r.params = append(r.params, mapped)
 }
 
 func (r *renderer) collectAlias(a *Alias, inline bool) {
 	if a.FieldAlias == "" {
-		// drizzle 在 fieldAlias 为 undefined 时退回到 SQLWrapper 分支。
+		// drizzle falls back to the SQLWrapper branch when fieldAlias is undefined.
 		r.collectWrapper(a, inline)
 		return
 	}
@@ -426,6 +480,8 @@ func (r *renderer) collectValueRows(v *ValueRows, inline bool) {
 			r.buf.WriteString(string(x))
 		case *SQL:
 			r.collect(x.QueryChunks, inline || x.shouldInlineParams)
+		case *Placeholder:
+			r.writePlaceholder(x)
 		default:
 			r.collectBoundValue(cell, v.Encoders[column], inline)
 		}
@@ -446,7 +502,7 @@ func (r *renderer) collectList(l List, inline bool) {
 	r.buf.WriteByte(')')
 }
 
-// collectWrapper 对应 drizzle 的 isSQLWrapper 分支。
+// collectWrapper corresponds to drizzle's isSQLWrapper branch.
 func (r *renderer) collectWrapper(ch Chunk, inline bool) {
 	nested := ch.GetSQL()
 	if nested == nil {
@@ -462,10 +518,10 @@ func (r *renderer) collectWrapper(ch Chunk, inline bool) {
 	r.buf.WriteByte(')')
 }
 
-// writeInline 对应 drizzle 的 mapInlineParam。
+// writeInline corresponds to drizzle's mapInlineParam.
 //
-// 与 drizzle 的差异：JS 的 toString() 对普通对象走 [object Object] 再转 JSON，
-// Go 用 fmt.Stringer 判断“有自定义文本表示”，其余走 encoding/json。
+// Difference from drizzle: JS toString() on a plain object goes through [object Object] and then JSON,
+// while Go uses fmt.Stringer to detect a custom text representation and sends the rest through encoding/json.
 func (r *renderer) writeInline(v any) {
 	switch x := v.(type) {
 	case nil:

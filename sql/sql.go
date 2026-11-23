@@ -1,25 +1,25 @@
 package sql
 
-// SQL 是一段待渲染的 SQL 片段，由一串 Chunk 组成。
+// SQL is an SQL fragment waiting to be rendered, made of a sequence of Chunks.
 //
-// 对应 drizzle 的 SQL 类。drizzle 的 `sql` 标签函数在 Go 里没有等价物
-// （Go 没有模板字符串），因此由 S(...) 承担同样的职责：把字面量、片段、
-// 参数按顺序拼成一串 chunk。
+// It corresponds to drizzle's SQL class. drizzle's `sql` tagged template has no equivalent in Go
+// (Go has no template strings), so S(...) takes on the same job: literals, fragments, and
+// parameters are assembled in order into a sequence of chunks.
 //
-// 重要差异：Go 的 S(...) 把裸字符串当作**绑定参数**，而不是字面量 ——
-// 这是安全默认值，与 drizzle 标签函数“插值即绑定”的保证一致。
-// 字面量必须显式用 Raw("...") 或 Fragment("...")。
+// Important difference: Go's S(...) treats a bare string as a **bound parameter**, not a literal —
+// a safe default that matches the drizzle tag function's "interpolation is binding" guarantee.
+// Literals must be written explicitly with Raw("...") or Fragment("...").
 type SQL struct {
 	QueryChunks []Chunk
 
 	shouldInlineParams bool
 }
 
-// GetSQL 实现 Chunk。SQL 是它自己的 wrapper。
+// GetSQL implements Chunk. SQL is its own wrapper.
 func (s *SQL) GetSQL() *SQL { return s }
 
-// Append 把另一段 SQL 的 chunk 追加到末尾，并返回自身。
-// 与 drizzle 的 append 一致：原地修改。
+// Append appends another SQL's chunks to the end and returns the receiver.
+// Matches drizzle's append: mutation is in place.
 func (s *SQL) Append(q *SQL) *SQL {
 	if q == nil {
 		return s
@@ -28,17 +28,17 @@ func (s *SQL) Append(q *SQL) *SQL {
 	return s
 }
 
-// InlineParams 打开内联参数模式：参数直接写进 SQL 文本而不是绑定。
+// InlineParams turns on inline-parameter mode: parameters are written into the SQL text instead of being bound.
 func (s *SQL) InlineParams() *SQL {
 	s.shouldInlineParams = true
 	return s
 }
 
-// If 在 cond 为 true 时返回自身，否则返回 (*SQL)(nil)。
-// 与 drizzle 的 if 一致，调用方通常把它直接喂给 And/Or/S。
+// If returns the receiver when cond is true, otherwise (*SQL)(nil).
+// Matches drizzle's if; callers usually feed the result straight into And/Or/S.
 //
-// 注意：返回值是 nil 指针而不是 nil 接口，塞进 Chunk 后接口本身不为 nil。
-// 渲染器与 And/Or 用 isNilChunk 识别这种情况，与 drizzle 的 undefined 等价。
+// Note: the return value is a nil pointer, not a nil interface, so the interface itself is not nil once stored in a Chunk.
+// The renderer and And/Or recognize this with isNilChunk, equivalent to drizzle's undefined.
 func (s *SQL) If(cond bool) *SQL {
 	if !cond {
 		return nil
@@ -46,22 +46,22 @@ func (s *SQL) If(cond bool) *SQL {
 	return s
 }
 
-// As 给这段 SQL 起一个字段别名，对应 drizzle 的 sql`...`.as("alias")。
+// As gives this SQL a field alias, matching drizzle's sql`...`.as("alias").
 func (s *SQL) As(alias string) *Alias {
 	return &Alias{SQL: s, FieldAlias: alias}
 }
 
-// S 按顺序拼装一段 SQL。
+// S assembles an SQL fragment in order.
 //
-// 参数规则：
-//   - Chunk（*SQL、Fragment、Name、Param、*Placeholder、*Alias、*Subquery、
-//     *ValueRows、List，以及 M1 之后的表与列）原样进入片段流；
-//   - nil 被视为“缺失”，直接跳过 —— 对应 drizzle 标签里 `param !== undefined`
-//     的过滤；
-//   - []any、[]Chunk 和 List 展开成括号列表。其它切片（含 []int）整个作为
-//     一个参数绑定；要按元素展开请用 ListOf。[]byte 始终是一个参数；
-//   - 其余值（包括裸 string）统一包装成 *Param 绑定。要绑定 NULL 请显式传
-//     NewParam(nil, nil)，因为裸 nil 会被跳过。
+// Argument rules:
+//   - A Chunk (*SQL, Fragment, Name, Param, *Placeholder, *Alias, *Subquery,
+//     *ValueRows, List, and tables and columns from M1 onward) enters the fragment stream as-is;
+//   - nil is treated as missing and skipped — matching the `param !== undefined`
+//     filter in drizzle's tag;
+//   - []any, []Chunk, and List expand into a parenthesized list. Other slices (including []int) are bound
+//     as a single parameter; use ListOf to expand element by element. []byte is always one parameter;
+//   - every other value (including a bare string) is wrapped as a *Param and bound. To bind NULL, pass
+//     NewParam(nil, nil) explicitly, because a bare nil is skipped.
 func S(parts ...any) *SQL {
 	chunks := make([]Chunk, 0, len(parts))
 	for _, p := range parts {
@@ -72,17 +72,17 @@ func S(parts ...any) *SQL {
 	return &SQL{QueryChunks: chunks}
 }
 
-// Raw 构造一段字面 SQL：不转义、不加引号、不绑定参数。
-// 对应 drizzle 的 sql.raw(str)。
+// Raw builds a literal SQL fragment: no escaping, no quoting, and no parameter binding.
+// Matches drizzle's sql.raw(str).
 func Raw(str string) *SQL {
 	return &SQL{QueryChunks: []Chunk{Fragment(str)}}
 }
 
-// Empty 返回空片段，对应 drizzle 的 sql.empty()。
+// Empty returns an empty fragment, matching drizzle's sql.empty().
 func Empty() *SQL { return &SQL{} }
 
-// Join 用 separator 连接一组片段。
-// 对应 drizzle 的 sql.join()：separator 为 nil 或列表为空时只做浅拷贝。
+// Join joins a group of fragments with separator.
+// Matches drizzle's sql.join(): when separator is nil or the list is empty, it only shallow-copies.
 func Join(chunks []Chunk, separator Chunk) *SQL {
 	if separator == nil || len(chunks) == 0 {
 		return &SQL{QueryChunks: append([]Chunk(nil), chunks...)}
@@ -97,30 +97,30 @@ func Join(chunks []Chunk, separator Chunk) *SQL {
 	return &SQL{QueryChunks: result}
 }
 
-// Identifier 构造一个待转义的标识符，对应 drizzle 的 sql.identifier(value)。
+// Identifier builds an identifier to be escaped, matching drizzle's sql.identifier(value).
 func Identifier(value string) Name { return Name(value) }
 
-// NewParam 构造一个绑定参数。encoder 为 nil 时使用 noop 语义。
-// 对应 drizzle 的 sql.param(value, encoder)。
+// NewParam builds a bound parameter. A nil encoder uses noop semantics.
+// Matches drizzle's sql.param(value, encoder).
 func NewParam(value any, encoder Encoder) *Param {
 	return &Param{Value: value, Encoder: encoder}
 }
 
-// NewPlaceholder 构造一个命名占位符，对应 drizzle 的 sql.placeholder(name)。
+// NewPlaceholder builds a named placeholder, matching drizzle's sql.placeholder(name).
 func NewPlaceholder(name string) *Placeholder {
 	return &Placeholder{Name: name}
 }
 
-// NewSubquery 构造一个派生表：渲染为 `(...) "alias"`。
+// NewSubquery builds a derived table, rendered as `(...) "alias"`.
 func NewSubquery(query *SQL, aliasName string) *Subquery {
 	return &Subquery{SQL: query, AliasName: aliasName}
 }
 
-// ListOf 把一组值包装成 List，用于 SQL 标签里数组插值的展开语义：
-// ListOf([]int{1, 2, 3}) 渲染为 `($1, $2, $3)`。
+// ListOf wraps a group of values as a List, for the expansion semantics of array interpolation in an SQL tag:
+// ListOf([]int{1, 2, 3}) renders as `($1, $2, $3)`.
 //
-// 为什么需要泛型版本：Go 的 ...any 参数不能接收 []int 这类具体切片，
-// 而 drizzle 的数组展开对任意元素类型都成立。
+// Why a generic version is needed: Go's ...any parameter cannot accept a concrete slice such as []int,
+// while drizzle's array expansion works for any element type.
 func ListOf[T any](values []T) List {
 	out := make(List, len(values))
 	for i, v := range values {
@@ -129,8 +129,8 @@ func ListOf[T any](values []T) List {
 	return out
 }
 
-// toChunk 把任意值规整成 chunk。第二个返回值表示该值是否保留
-// （false 只对应 nil，与 drizzle 过滤 undefined 的行为一致）。
+// toChunk normalizes an arbitrary value into a chunk. The second return value says whether the value is kept
+// (false only for nil, matching drizzle's filtering of undefined).
 func toChunk(v any) (Chunk, bool) {
 	switch x := v.(type) {
 	case nil:
@@ -141,7 +141,7 @@ func toChunk(v any) (Chunk, bool) {
 		}
 		return x, true
 	case []byte:
-		// []byte 在 Go 里是切片，但语义上是单值（bytea），不展开。
+		// []byte is a slice in Go, but semantically a single value (bytea), so it is not expanded.
 		return &Param{Value: x}, true
 	}
 	if list, ok := sliceToList(v); ok {
@@ -150,8 +150,8 @@ func toChunk(v any) (Chunk, bool) {
 	return &Param{Value: v}, true
 }
 
-// toListElement 规整一个列表元素：列表里的 nil 绑定为 NULL 参数，
-// 对应 drizzle 数组分支里 null 走 param 的行为。
+// toListElement normalizes one list element: a nil in a list is bound as a NULL parameter,
+// matching drizzle's array branch where null goes through param.
 func toListElement(v any) Chunk {
 	if v == nil {
 		return &Param{Value: nil}
@@ -160,8 +160,8 @@ func toListElement(v any) Chunk {
 	return ch
 }
 
-// sliceToList 只展开已经是 chunk 列表的值。
-// []int 这类具体切片不在这里展开：反射展开在热路径上，调用方用 ListOf。
+// sliceToList expands only values that are already chunk lists.
+// Concrete slices such as []int are not expanded here: reflection on the hot path is avoided, and callers use ListOf.
 func sliceToList(v any) (List, bool) {
 	switch x := v.(type) {
 	case []Chunk:

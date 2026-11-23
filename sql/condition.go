@@ -1,30 +1,30 @@
 package sql
 
-// 本文件只包含“不碰列类型”的条件组合子，对应 drizzle 的
-// sql/expressions/conditions.ts 里的 and / or / not 三个函数。
+// This file contains only condition combinators that do not touch column types, matching drizzle's
+// and / or / not functions in sql/expressions/conditions.ts.
 //
-// 为什么它们在 M0 而不是 M2：这三个函数只操作 Wrapper，与列、编码器无关；
-// 真正的列运算符（Eq / Gt / InArray ……）需要列类型与编码器，属于 M2。
-// drizzle 的单元测试 sql-builder.test.ts 覆盖的正是这三个函数，所以它们
-// 必须在 M0 就可用。
+// Why they live in M0 rather than M2: these three functions operate only on Wrapper and do not depend on columns or encoders;
+// real column operators (Eq / Gt / InArray ...) need column types and encoders and belong to M2.
+// drizzle's unit test sql-builder.test.ts covers exactly these three functions, so they
+// must be usable in M0.
 
-// And 用 and 连接条件，nil 条件（含 (*SQL)(nil)）自动忽略。
+// And joins conditions with and. Nil conditions (including (*SQL)(nil)) are ignored.
 //
-// 对应 drizzle 的 and：没有条件时返回 nil，单个条件时原样包一层，
-// 多个条件时渲染为 `((c1) and (c2))`。
+// Matches drizzle's and: return nil when there are no conditions, wrap a single condition as-is,
+// and render multiple conditions as `((c1) and (c2))`.
 func And(conditions ...Chunk) *SQL {
 	return joinConditions(conditions, Fragment(") and ("))
 }
 
-// Or 用 or 连接条件，语义与 And 相同，分隔符换成 `) or (`。
+// Or joins conditions with or. The semantics match And, with the separator replaced by `) or (`.
 func Or(conditions ...Chunk) *SQL {
 	return joinConditions(conditions, Fragment(") or ("))
 }
 
-// Not 取反一个条件。
+// Not negates a condition.
 //
-// 与 drizzle 一致：条件本身是 SQL 时加一层括号（`not (...)`），
-// 否则直接接在后面（`not "users"."id"`）—— 后者依赖该 chunk 自己的渲染分支。
+// Matches drizzle: when the condition itself is SQL, wrap it in parentheses (`not (...)`);
+// otherwise append it directly (`not "users"."id"`) — the latter depends on that chunk's own render branch.
 func Not(condition Chunk) *SQL {
 	if isNilChunk(condition) {
 		return nil

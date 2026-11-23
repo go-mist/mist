@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/entity"
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/entity"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestKindOf(t *testing.T) {
@@ -109,7 +109,7 @@ func TestFillPlaceholders(t *testing.T) {
 }
 
 func TestFillPlaceholdersThenRender(t *testing.T) {
-	// 完整链路：渲染得到占位符 → 填充 → 得到可执行的参数。
+	// Full path: render yields placeholders, then fill them, then obtain executable parameters.
 	query := sql.S(sql.Raw("select * from users where id = "), sql.NewPlaceholder("id"))
 	rendered, err := sql.Render(query, pg.Dialect{}, sql.RenderConfig{})
 	if err != nil {

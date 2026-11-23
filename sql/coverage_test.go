@@ -3,11 +3,11 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/sql"
 )
 
-// 本文件补上 chunk 类型上的接口方法：它们大多由渲染器内部调用，
-// 但在 Go 的覆盖率统计里只有被直接调用过才算覆盖。
+// This file covers interface methods on chunk types: most are called from inside the renderer,
+// but Go coverage counts them only when they are invoked directly.
 
 func TestChunkGetSQL(t *testing.T) {
 	tests := []struct {
@@ -71,7 +71,7 @@ func TestInlineUnsignedAndNonFinite(t *testing.T) {
 	}
 }
 
-// sqlEncoder 让编码器返回一段 SQL，验证“编码后仍是 SQL 就展开”的分支。
+// sqlEncoder makes the encoder return a piece of SQL, covering the "still SQL after encoding, so expand" branch.
 type sqlEncoder struct{}
 
 func (sqlEncoder) MapToDriverValue(any) any { return sql.Raw("now()") }
@@ -87,7 +87,7 @@ func TestEncoderReturningSQLExpands(t *testing.T) {
 	}
 }
 
-// nilWrapper 的 GetSQL 返回 nil，验证 wrapper 分支的空值保护。
+// nilWrapper's GetSQL returns nil, covering the nil guard on the wrapper branch.
 type nilWrapper struct{}
 
 func (nilWrapper) GetSQL() *sql.SQL { return nil }
@@ -100,14 +100,14 @@ func TestWrapperReturningNil(t *testing.T) {
 }
 
 func TestListVariants(t *testing.T) {
-	// []Chunk 直接构成 List，不经过反射。
+	// []Chunk forms a List directly, without going through reflection.
 	chunks := []sql.Chunk{sql.Raw("a"), sql.NewParam(1, nil)}
 	got := mustRender(t, sql.S(chunks), sql.RenderConfig{})
 	if want := "(a, $1)"; got.SQL != want {
 		t.Fatalf("got %s want %s", got.SQL, want)
 	}
 
-	// valueRows 的 cell 是内联 SQL 时走 SQL 分支。
+	// When a valueRows cell is inline SQL, the SQL branch is taken.
 	rows := &sql.ValueRows{
 		Cells:    []any{sql.NewParam(1, nil), sql.S(sql.Raw("x"), 2).InlineParams()},
 		Encoders: []sql.Encoder{sql.NoopEncoder{}, sql.NoopEncoder{}},

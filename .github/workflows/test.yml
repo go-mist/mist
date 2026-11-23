@@ -1,0 +1,45 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+      - run: go test -race -count=1 ./...
+      # Integration tests start postgres:16-alpine and mysql:8.4 with testcontainers.
+      # Packages stay in separate steps so they do not share a server.
+      # SQLite uses a temporary file. The driver is in-process.
+      - run: go test -race -tags integration -count=1 -timeout 15m ./pg/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./std/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./mysql/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./migrate/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./introspect/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./ddl/pg/
+      - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./sqlite/
+      - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./ddl/sqlite/
+      - run: go run ./cmd/mist generate -dir internal/schemafixture
+      - run: go run ./cmd/mist generate -dir internal/mysqlfixture
+      - run: git diff --exit-code
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.4"
+      - name: benchmark mist sqlx gorm ent bun
+        working-directory: bench
+        run: |
+          set -o pipefail
+          CGO_ENABLED=0 go test -bench=. -benchmem -count=1 -timeout 20m | tee bench.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ github.run_id }}
+          path: bench/bench.txt

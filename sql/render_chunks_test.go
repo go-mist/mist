@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestRenderValueRows(t *testing.T) {
@@ -25,7 +25,7 @@ func TestRenderValueRows(t *testing.T) {
 }
 
 func TestRenderValueRowsRagged(t *testing.T) {
-	// 最后一行不足宽度时按宽度换行，渲染结果仍然合法。
+	// When the last row is shorter than the width, wrap by width; the rendered result is still valid.
 	rows := &sql.ValueRows{Cells: []any{1, 2, 3}, Encoders: []sql.Encoder{sql.NoopEncoder{}, sql.NoopEncoder{}}}
 	got := mustRender(t, sql.S(rows), sql.RenderConfig{})
 	if want := `($1, $2), ($3)`; got.SQL != want {
@@ -34,7 +34,7 @@ func TestRenderValueRowsRagged(t *testing.T) {
 }
 
 func TestRenderValueRowsExpressions(t *testing.T) {
-	// cells 里允许直接放 SQL 片段：对应插入 default / 表达式。
+	// Cells may hold SQL fragments directly: this covers insert default / expressions.
 	rows := &sql.ValueRows{
 		Cells:    []any{1, sql.Raw("default")},
 		Encoders: []sql.Encoder{sql.NoopEncoder{}, sql.NoopEncoder{}},
@@ -42,6 +42,21 @@ func TestRenderValueRowsExpressions(t *testing.T) {
 	got := mustRender(t, sql.S(rows), sql.RenderConfig{})
 	if want := `($1, default)`; got.SQL != want {
 		t.Fatalf("got %s want %s", got.SQL, want)
+	}
+}
+
+func TestRenderValueRowsPlaceholder(t *testing.T) {
+	ph := sql.NewPlaceholder("name")
+	rows := &sql.ValueRows{
+		Cells:    []any{ph},
+		Encoders: []sql.Encoder{sql.NoopEncoder{}},
+	}
+	got := mustRender(t, sql.S(rows), sql.RenderConfig{})
+	if want := `($1)`; got.SQL != want {
+		t.Fatalf("got %s want %s", got.SQL, want)
+	}
+	if len(got.Params) != 1 || got.Params[0] != ph {
+		t.Fatalf("params = %#v", got.Params)
 	}
 }
 
@@ -53,7 +68,7 @@ func TestRenderValueRowsNoEncoders(t *testing.T) {
 }
 
 func TestRenderValueRowsGetSQL(t *testing.T) {
-	// drizzle 的兼容壳：不认 ValueRows 的路径也能拿到等价 SQL。
+	// drizzle compatibility shim: a path that does not know ValueRows still gets equivalent SQL.
 	rows := &sql.ValueRows{Cells: []any{1, 2, 3}, Encoders: []sql.Encoder{sql.NoopEncoder{}, sql.NoopEncoder{}}}
 	got := mustRender(t, rows.GetSQL(), sql.RenderConfig{})
 	if want := `($1, $2), ($3)`; got.SQL != want {
@@ -92,7 +107,7 @@ func TestRenderList(t *testing.T) {
 }
 
 func TestRenderByteSliceIsScalar(t *testing.T) {
-	// []byte 是切片但语义上是一个值，不能被展开成列表。
+	// []byte is a slice but semantically one value, and must not be expanded into a list.
 	got := mustRender(t, sql.S([]byte{1, 2, 3}), sql.RenderConfig{})
 	if want := `$1`; got.SQL != want {
 		t.Fatalf("got %s want %s", got.SQL, want)
@@ -103,7 +118,7 @@ func TestRenderByteSliceIsScalar(t *testing.T) {
 }
 
 func TestRenderLargeParamList(t *testing.T) {
-	// 对应 drizzle Issue #5994：超大参数列表不能被截断。
+	// Corresponds to drizzle Issue #5994: a very large parameter list must not be truncated.
 	const count = 150000
 	values := make([]int, count)
 	for i := range values {

@@ -6,30 +6,30 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
-// testColumn 模拟一个有专用渲染分支、并且自带“省略括号”契约的列。
-// M1 的真实列会替换它；在这里它让渲染器与条件组合子可以被独立测试。
+// testColumn simulates a column with a dedicated render branch and an omit-parentheses contract.
+// M1's real columns will replace it; here it lets the renderer and condition combinators be tested on their own.
 type testColumn string
 
-// GetSQL 实现 sql.Chunk。
+// GetSQL implements sql.Chunk.
 func (c testColumn) GetSQL() *sql.SQL { return &sql.SQL{QueryChunks: []sql.Chunk{sql.Fragment(c)}} }
 
-// ShouldOmitSQLParens 表示这个 chunk 自带边界，wrapper 分支不应再加括号。
+// ShouldOmitSQLParens means this chunk already has its own boundary, so the wrapper branch must not add parentheses.
 func (c testColumn) ShouldOmitSQLParens() bool { return true }
 
-// quotedWrapper 是一个普通 wrapper：没有省略括号契约，渲染时应被括号包裹。
+// quotedWrapper is an ordinary wrapper: it has no omit-parentheses contract, so rendering wraps it in parentheses.
 type quotedWrapper struct{ inner *sql.SQL }
 
-// GetSQL 实现 sql.Chunk。
+// GetSQL implements sql.Chunk.
 func (w quotedWrapper) GetSQL() *sql.SQL { return w.inner }
 
-// upperEncoder 演示一个非 noop 编码器。
+// upperEncoder demonstrates a non-noop encoder.
 type upperEncoder struct{}
 
-// MapToDriverValue 把字符串转成大写，其余原样。
+// MapToDriverValue uppercases strings and leaves everything else unchanged.
 func (upperEncoder) MapToDriverValue(v any) any {
 	if s, ok := v.(string); ok {
 		return strings.ToUpper(s)
@@ -37,7 +37,7 @@ func (upperEncoder) MapToDriverValue(v any) any {
 	return v
 }
 
-// IsNoop 返回 false，渲染器因此会调用 MapToDriverValue。
+// IsNoop returns false, so the renderer calls MapToDriverValue.
 func (upperEncoder) IsNoop() bool { return false }
 
 type customStringer struct{}
@@ -128,7 +128,7 @@ func TestRenderInlineError(t *testing.T) {
 }
 
 func TestRenderInlinePropagation(t *testing.T) {
-	// 内联模式从外层传入：嵌套 SQL 与 List 里的参数同样内联。
+	// Inline mode is passed in from the outside: parameters inside nested SQL and List are inlined too.
 	inner := sql.S(sql.Raw("("), "x", sql.Raw(")"))
 	query := sql.S(sql.Raw("select "), inner, sql.Raw(", "), sql.ListOf([]int{1, 2}))
 
@@ -137,7 +137,7 @@ func TestRenderInlinePropagation(t *testing.T) {
 		t.Fatalf("SQL mismatch: got %s want %s", got.SQL, want)
 	}
 
-	// SQL.InlineParams() 会自行打开内联，无需配置。
+	// SQL.InlineParams() turns inline mode on by itself; no config is required.
 	inlineInner := sql.S(sql.Raw("x"), 1).InlineParams()
 	outer := sql.S(sql.Raw("limit "), inlineInner)
 	got = mustRender(t, outer, sql.RenderConfig{})
@@ -201,7 +201,7 @@ func TestRenderWrapperParens(t *testing.T) {
 }
 
 func TestRenderSkipsNils(t *testing.T) {
-	// nil 与“装进接口的 nil 指针”都必须被跳过，等价于 drizzle 的 undefined。
+	// Both nil and a nil pointer stored in an interface must be skipped, equivalent to drizzle's undefined.
 	got := mustRender(t, sql.S(sql.Raw("a"), nil, sql.S(sql.Raw("b")).If(false), sql.Raw("c")), sql.RenderConfig{})
 	if want := "ac"; got.SQL != want {
 		t.Fatalf("got %q want %q", got.SQL, want)

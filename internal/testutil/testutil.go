@@ -1,29 +1,130 @@
-// Package testutil 提供 golden 对拍工具。
+// Package testutil provides golden comparison helpers.
 //
-// 对拍的思路：同一份 fixture 在 drizzle 与 drizzle-go 上跑，逐字节比较
-// (SQL 文本, 参数列表)。fixture 只描述期望值，不关心由哪一侧产出 ——
-// 上游用例可以直接转成 fixture 文件，Go 侧不需要手工抄期望字符串。
+// Run the same fixture on drizzle and on mist, then compare byte for byte
+// (SQL text, parameter list). A fixture only states the expected value and does not care which side produced it —
+// an upstream case can become a fixture file directly, so Go does not need hand-copied expected strings.
+//
+// Run walks a directory of JSON fixtures. Each Case.Name matches one file.
+// `go test -update-golden` rewrites those files from the builders.
 package testutil
 
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/sql"
 )
 
-// Fixture 是一份 golden 期望。
+// updateGolden rewrites fixture JSON from the current query.
+// Add a Case, then run: go test -update-golden
+var updateGolden = flag.Bool("update-golden", false, "rewrite golden JSON fixtures from the current SQL")
+
+// Case is one golden query. Name is the fixture file name without ".json".
 //
-// SQL 文本必须逐字节相等；Params 用规范化 JSON 比较，以避开 Go 与 JS
-// 在数字表示上的细微差异（例如 1 与 1.0）。
+// To add a case: append a Case, run `go test -update-golden` in that package,
+// and commit the JSON file the command writes. A JSON file with no Case, or a
+// Case with no JSON file, fails the test.
+type Case struct {
+	Name  string
+	Build func() (sql.Query, error)
+}
+
+// Run compares every Case with dir/<Name>.json.
+func Run(t *testing.T, dir string, cases []Case) {
+	t.Helper()
+	byName := make(map[string]Case, len(cases))
+	for _, c := range cases {
+		if c.Name == "" || c.Build == nil {
+			t.Fatalf("testutil: case %q needs a name and a builder", c.Name)
+		}
+		if _, ok := byName[c.Name]; ok {
+			t.Fatalf("testutil: duplicate case %q", c.Name)
+		}
+		byName[c.Name] = c
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil && !*updateGolden {
+		t.Fatalf("testutil: read %s: %v", dir, err)
+	}
+	files := make(map[string]struct{})
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		files[strings.TrimSuffix(entry.Name(), ".json")] = struct{}{}
+	}
+	for name := range files {
+		if _, ok := byName[name]; !ok {
+			t.Errorf("testutil: fixture %s.json has no case", name)
+		}
+	}
+	if !*updateGolden {
+		for name := range byName {
+			if _, ok := files[name]; !ok {
+				t.Errorf("testutil: case %s has no fixture; run go test -update-golden", name)
+			}
+		}
+	}
+	if t.Failed() {
+		return
+	}
+
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			got, err := byName[name].Build()
+			if err != nil {
+				t.Fatalf("testutil: build %s: %v", name, err)
+			}
+			path := filepath.Join(dir, name+".json")
+			if *updateGolden {
+				if err := writeFixture(path, got); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			AssertQuery(t, got, LoadFixture(t, path))
+		})
+	}
+}
+
+func writeFixture(path string, got sql.Query) error {
+	params := got.Params
+	if params == nil {
+		params = []any{}
+	}
+	out, err := json.MarshalIndent(struct {
+		SQL    string `json:"sql"`
+		Params []any  `json:"params"`
+	}{SQL: got.SQL, Params: params}, "", "  ")
+	if err != nil {
+		return err
+	}
+	out = append(out, '\n')
+	return os.WriteFile(path, out, 0o644)
+}
+
+// Fixture is one golden expectation.
+//
+// The SQL text must match byte for byte. Params are compared as canonical JSON, avoiding small
+// differences in how Go and JS spell numbers (for example 1 and 1.0).
 type Fixture struct {
 	SQL    string          `json:"sql"`
 	Params json.RawMessage `json:"params"`
 }
 
-// LoadFixture 读取一个 fixture 文件；解析失败直接终止测试。
+// LoadFixture reads a fixture file. A parse failure stops the test.
 func LoadFixture(t testing.TB, path string) Fixture {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -37,7 +138,7 @@ func LoadFixture(t testing.TB, path string) Fixture {
 	return f
 }
 
-// AssertQuery 断言渲染结果与 fixture 一致。
+// AssertQuery asserts that the rendered result matches the fixture.
 func AssertQuery(t testing.TB, got sql.Query, want Fixture) {
 	t.Helper()
 
@@ -52,8 +153,8 @@ func AssertQuery(t testing.TB, got sql.Query, want Fixture) {
 		return
 	}
 
-	// nil 与空切片在语义上相同；统一编码成 [] 再比较，
-	// 否则 nil 会编码成 null，与 fixture 里的 [] 不等。
+	// nil and an empty slice mean the same thing. Encode both as [] before comparing,
+	// otherwise nil becomes null and does not match [] in the fixture.
 	params := got.Params
 	if params == nil {
 		params = []any{}
@@ -68,13 +169,13 @@ func AssertQuery(t testing.TB, got sql.Query, want Fixture) {
 	}
 }
 
-// JSONEqual 判断两段 JSON 是否在规范化之后相等。
+// JSONEqual reports whether two JSON texts are equal after canonicalization.
 func JSONEqual(t testing.TB, a, b []byte) bool {
 	t.Helper()
 	return canonicalJSON(t, a) == canonicalJSON(t, b)
 }
 
-// canonicalJSON 把 JSON 解码再编码，消除空白、键序与数字字面写法差异。
+// canonicalJSON decodes JSON and encodes it again, dropping differences in whitespace, key order, and number literals.
 func canonicalJSON(t testing.TB, raw []byte) string {
 	t.Helper()
 	dec := json.NewDecoder(bytes.NewReader(raw))

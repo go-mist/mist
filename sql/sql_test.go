@@ -3,17 +3,17 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/sql"
 )
 
 func TestSChunkNormalization(t *testing.T) {
 	got := mustRender(t, sql.S(
-		sql.Raw("a"),                  // 片段原样
-		"literal",                     // 裸字符串按参数绑定（安全默认值）
-		nil,                           // 缺失，跳过
-		sql.S(sql.Raw("b")).If(false), // nil 指针，跳过
-		[]int{1, 2},                   // 具体切片整体绑定，不展开
-		[]byte{7, 8},                  // []byte 不展开
+		sql.Raw("a"),                  // fragment as-is
+		"literal",                     // bare string bound as a parameter (safe default)
+		nil,                           // missing, skipped
+		sql.S(sql.Raw("b")).If(false), // nil pointer, skipped
+		[]int{1, 2},                   // concrete slice bound as a whole, not expanded
+		[]byte{7, 8},                  // []byte is not expanded
 	), sql.RenderConfig{})
 
 	const want = `a$1$2$3`
@@ -30,8 +30,8 @@ func TestSChunkNormalization(t *testing.T) {
 }
 
 func TestSDoesNotTreatStringsAsLiterals(t *testing.T) {
-	// 这是本库最重要的安全默认值：插值即绑定。
-	// 要把字符串写进 SQL 文本，必须显式 Raw/Fragment。
+	// This is the library's most important safe default: interpolation is binding.
+	// To write a string into SQL text, use Raw/Fragment explicitly.
 	got := mustRender(t, sql.S("select * from users"), sql.RenderConfig{})
 	if want := "$1"; got.SQL != want {
 		t.Fatalf("got %s want %s", got.SQL, want)
@@ -47,7 +47,7 @@ func TestRawAndEmpty(t *testing.T) {
 		t.Fatalf("got %#v want SQL=%q params=nil", got, want)
 	}
 
-	// 空片段只贡献空字符串，不绑定参数。
+	// An empty fragment contributes only an empty string and binds no parameters.
 	got = mustRender(t, sql.Raw(""), sql.RenderConfig{})
 	if got.SQL != "" || got.Params != nil {
 		t.Fatalf("got %#v want empty", got)
@@ -82,7 +82,7 @@ func TestJoinDoesNotAliasInput(t *testing.T) {
 		t.Fatalf("got %s want %s", got.SQL, want)
 	}
 
-	// 修改原切片不应影响已构造的片段。
+	// Mutating the original slice must not affect the fragment already built.
 	parts[0] = sql.Raw("changed")
 	got = mustRender(t, query, sql.RenderConfig{})
 	if want := "a|b"; got.SQL != want {
@@ -99,7 +99,7 @@ func TestAppend(t *testing.T) {
 		t.Fatalf("got %s want %s", got.SQL, want)
 	}
 
-	// Append(nil) 是空操作。
+	// Append(nil) is a no-op.
 	query.Append(nil)
 	got = mustRender(t, query, sql.RenderConfig{})
 	if want := `select "id" from "users"`; got.SQL != want {
@@ -138,7 +138,7 @@ func TestListOf(t *testing.T) {
 		t.Fatalf("params mismatch: %#v", got.Params)
 	}
 
-	// 元素本身是 chunk 时保持 chunk 语义。
+	// When an element is itself a chunk, chunk semantics are preserved.
 	chunks := sql.ListOf([]any{sql.Raw("default"), 1})
 	got = mustRender(t, sql.S(chunks), sql.RenderConfig{})
 	if want := `(default, $1)`; got.SQL != want {

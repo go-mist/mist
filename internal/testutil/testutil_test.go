@@ -1,40 +1,36 @@
 package testutil_test
 
 import (
-	"path/filepath"
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/internal/testutil"
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/internal/testutil"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
-func TestAssertQueryWithDrizzleFixture(t *testing.T) {
-	fixture := testutil.LoadFixture(t, filepath.Join("testdata", "select_users.json"))
-
-	query := sql.S(
-		sql.Raw("select "), sql.Identifier("id"),
-		sql.Raw(", "), sql.Identifier("name"),
-		sql.Raw(" from "), sql.Identifier("users"),
-		sql.Raw(" where "), sql.Identifier("id"), sql.Raw(" = "), 1,
-		sql.Raw(" and "), sql.Identifier("name"), sql.Raw(" = "), "alice",
-	)
-
-	got, err := (pg.Dialect{}).SQLToQuery(query)
-	if err != nil {
-		t.Fatalf("SQLToQuery() error: %v", err)
-	}
-	testutil.AssertQuery(t, got, fixture)
-}
-
-func TestAssertQueryMixedParams(t *testing.T) {
-	fixture := testutil.LoadFixture(t, filepath.Join("testdata", "mixed_params.json"))
-
-	got, err := (pg.Dialect{}).SQLToQuery(sql.S(sql.Raw("values "), sql.ListOf([]any{nil, 1.5, "x"})))
-	if err != nil {
-		t.Fatalf("SQLToQuery() error: %v", err)
-	}
-	testutil.AssertQuery(t, got, fixture)
+func TestGoldenFixtures(t *testing.T) {
+	d := pg.Dialect{}
+	testutil.Run(t, "testdata", []testutil.Case{
+		{
+			Name: "select_users",
+			Build: func() (sql.Query, error) {
+				query := sql.S(
+					sql.Raw("select "), sql.Identifier("id"),
+					sql.Raw(", "), sql.Identifier("name"),
+					sql.Raw(" from "), sql.Identifier("users"),
+					sql.Raw(" where "), sql.Identifier("id"), sql.Raw(" = "), 1,
+					sql.Raw(" and "), sql.Identifier("name"), sql.Raw(" = "), "alice",
+				)
+				return d.SQLToQuery(query)
+			},
+		},
+		{
+			Name: "mixed_params",
+			Build: func() (sql.Query, error) {
+				return d.SQLToQuery(sql.S(sql.Raw("values "), sql.ListOf([]any{nil, 1.5, "x"})))
+			},
+		},
+	})
 }
 
 func TestAssertQueryNoParams(t *testing.T) {

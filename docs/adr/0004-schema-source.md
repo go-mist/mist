@@ -39,7 +39,7 @@ tag 只留列级修饰：`pk`、`notnull`、`unique`、`default`、`references=�
 ## 后果
 
 - README 里的 `User` 必须有 `Table()`，单列主键修饰符是 `pk`。
-- M1 先解析 `Name` 和复合主键。索引和 CHECK 的字段可以留在 `TableMeta` 里，解析往后放。
+- `Table()` 解析 `Name`、复合主键、索引和 CHECK。列级 `unique`、`default`、外键、长度、精度、`generated`、`identity` 写进生成的 `ColumnSpecs()`。
 - 结构体上不挂 `Save` / `Find`，也没有钩子。它是扫描目标，不是模型。
 
 ## 被否决的方案

@@ -4,14 +4,14 @@ import (
 	"testing"
 )
 
-// 本文件是白盒测试：只覆盖外部调用者看不到的规整逻辑。
-// 黑盒行为在 sql_test / render_test / condition_test 里。
+// This file is white-box tests: it covers only the normalization logic external callers cannot see.
+// Black-box behavior lives in sql_test / render_test / condition_test.
 
 func TestToChunk(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  any
-		want   bool // 是否保留
+		want   bool // whether to keep
 		assert func(t *testing.T, ch Chunk)
 	}{
 		{
@@ -133,7 +133,7 @@ func TestSliceToList(t *testing.T) {
 		t.Fatal("[]int must not expand; use ListOf")
 	}
 
-	// 列表里的 nil 元素绑定为 NULL 参数，而不是被丢弃。
+	// A nil element in a list is bound as a NULL parameter rather than discarded.
 	l, ok := sliceToList([]any{1, nil})
 	if !ok || len(l) != 2 {
 		t.Fatalf("unexpected list shape: %#v", l)

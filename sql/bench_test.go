@@ -3,12 +3,12 @@ package sql_test
 import (
 	"testing"
 
-	"github.com/xbmlz/drizzle-go/pg"
-	"github.com/xbmlz/drizzle-go/sql"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/sql"
 )
 
-// 基准只测“构建 → 渲染”这一段的分配与耗时。
-// 关注的是每查询的分配次数，而不是绝对 ns —— 后者依机器而定。
+// The benchmark measures only allocations and time for the build-to-render stretch.
+// What matters is allocations per query, not absolute ns — the latter depends on the machine.
 
 func benchQuery() *sql.SQL {
 	return sql.S(

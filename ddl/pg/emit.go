@@ -1,0 +1,390 @@
+// Package pg renders diff changes as PostgreSQL statements.
+// Statements are split with the statement-breakpoint that migrate recognizes.
+package pg
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/xbmlz/mist/diff"
+	"github.com/xbmlz/mist/pg"
+	"github.com/xbmlz/mist/schema"
+)
+
+// breakpoint matches migrate's split marker verbatim.
+const breakpoint = "--> statement-breakpoint"
+
+// Render writes the changes as the body of one migration.sql. No changes returns an empty string.
+func Render(changes []diff.Change) (string, error) {
+	stmts, err := statements(changes)
+	if err != nil {
+		return "", err
+	}
+	if len(stmts) == 0 {
+		return "", nil
+	}
+	return strings.Join(stmts, "\n"+breakpoint+"\n") + "\n", nil
+}
+
+func statements(changes []diff.Change) ([]string, error) {
+	var creates []schema.Table
+	var drops []schema.Table
+	var rest []diff.Change
+	for _, change := range changes {
+		switch change.Kind {
+		case diff.CreateTable:
+			creates = append(creates, *change.TableDef)
+		case diff.DropTable:
+			drops = append(drops, *change.TableDef)
+		default:
+			rest = append(rest, change)
+		}
+	}
+	var stmts []string
+	for _, change := range rest {
+		if change.Kind != diff.CreateEnum {
+			continue
+		}
+		sql, err := createEnum(change)
+		if err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, sql)
+	}
+	createSQL, err := createTables(creates)
+	if err != nil {
+		return nil, err
+	}
+	stmts = append(stmts, createSQL...)
+	for _, change := range rest {
+		if change.Kind == diff.CreateEnum || change.Kind == diff.DropEnum {
+			continue
+		}
+		sql, err := renderChange(change)
+		if err != nil {
+			return nil, err
+		}
+		stmts = append(stmts, sql...)
+	}
+	dropSQL, err := dropTables(drops)
+	if err != nil {
+		return nil, err
+	}
+	stmts = append(stmts, dropSQL...)
+	for _, change := range rest {
+		if change.Kind != diff.DropEnum {
+			continue
+		}
+		stmts = append(stmts, "DROP TYPE "+quote(change.Enum.Name)+";")
+	}
+	return stmts, nil
+}
+
+func createEnum(change diff.Change) (string, error) {
+	if change.Enum == nil || len(change.Enum.Values) == 0 {
+		name := ""
+		if change.Enum != nil {
+			name = change.Enum.Name
+		}
+		return "", fmt.Errorf("ddl: enum %s has no values, cannot CREATE TYPE%s", name, at(change.Loc))
+	}
+	vals := make([]string, len(change.Enum.Values))
+	for i, val := range change.Enum.Values {
+		vals[i] = pg.Dialect{}.EscapeString(val)
+	}
+	return "CREATE TYPE " + quote(change.Enum.Name) + " AS ENUM (" + strings.Join(vals, ", ") + ");", nil
+}
+
+func renderChange(change diff.Change) ([]string, error) {
+	switch change.Kind {
+	case diff.AlterEnum:
+		return nil, fmt.Errorf("ddl: enum %s values changed; ALTER TYPE is not generated yet%s", change.Enum.Name, at(change.Loc))
+	case diff.AddColumn:
+		return []string{"ALTER TABLE " + quote(change.Table) + " ADD COLUMN " + columnSQL(*change.Column, false) + ";"}, nil
+	case diff.DropColumn:
+		return []string{"ALTER TABLE " + quote(change.Table) + " DROP COLUMN " + quote(change.Name) + ";"}, nil
+	case diff.AlterColumn:
+		return alterColumn(change)
+	case diff.AlterPrimaryKey:
+		return alterPrimaryKey(change), nil
+	case diff.AddUnique:
+		return []string{fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s UNIQUE (%s);",
+			quote(change.Table), quote(change.Unique.Name), quoteList(change.Unique.Columns))}, nil
+	case diff.DropUnique, diff.DropCheck, diff.DropForeignKey:
+		return []string{"ALTER TABLE " + quote(change.Table) + " DROP CONSTRAINT " + quote(change.Name) + ";"}, nil
+	case diff.AddIndex:
+		return []string{indexSQL(change.Table, *change.Index)}, nil
+	case diff.DropIndex:
+		return []string{"DROP INDEX " + quote(change.Name) + ";"}, nil
+	case diff.AddCheck:
+		return []string{fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);",
+			quote(change.Table), quote(change.Check.Name), change.Check.Expr)}, nil
+	case diff.AddForeignKey:
+		return []string{"ALTER TABLE " + quote(change.Table) + " ADD " + foreignKeySQL(*change.ForeignKey) + ";"}, nil
+	default:
+		return nil, fmt.Errorf("ddl: unknown change %s", change.Kind)
+	}
+}
+
+func alterColumn(change diff.Change) ([]string, error) {
+	from, to := change.ColumnFrom, change.Column
+	if from.Generated != to.Generated {
+		return nil, fmt.Errorf("ddl: generated expression of column %s.%s cannot be altered in place%s", change.Table, to.Name, at(change.Loc))
+	}
+	var stmts []string
+	prefix := "ALTER TABLE " + quote(change.Table) + " ALTER COLUMN " + quote(to.Name)
+	if !sameType(from.Type, to.Type) {
+		stmts = append(stmts, prefix+" SET DATA TYPE "+renderType(to.Type)+";")
+	}
+	if from.Identity && !to.Identity {
+		stmts = append(stmts, prefix+" DROP IDENTITY;")
+	}
+	if from.Default != to.Default && to.Default == "" && from.Default != "" {
+		stmts = append(stmts, prefix+" DROP DEFAULT;")
+	}
+	if to.Default != "" && from.Default != to.Default && to.Generated == "" && !to.Identity {
+		stmts = append(stmts, prefix+" SET DEFAULT "+to.Default+";")
+	}
+	if !from.Identity && to.Identity {
+		stmts = append(stmts, prefix+" ADD GENERATED BY DEFAULT AS IDENTITY;")
+	}
+	if from.NotNull != to.NotNull {
+		if to.NotNull {
+			stmts = append(stmts, prefix+" SET NOT NULL;")
+		} else {
+			stmts = append(stmts, prefix+" DROP NOT NULL;")
+		}
+	}
+	return stmts, nil
+}
+
+func alterPrimaryKey(change diff.Change) []string {
+	var stmts []string
+	if len(change.PrimaryKeyFrom) > 0 {
+		stmts = append(stmts, "ALTER TABLE "+quote(change.Table)+" DROP CONSTRAINT "+quote(change.PrimaryKeyName)+";")
+	}
+	if len(change.PrimaryKeyTo) > 0 {
+		stmts = append(stmts, "ALTER TABLE "+quote(change.Table)+" ADD PRIMARY KEY ("+quoteList(change.PrimaryKeyTo)+");")
+	}
+	return stmts
+}
+
+func createTables(tables []schema.Table) ([]string, error) {
+	if len(tables) == 0 {
+		return nil, nil
+	}
+	ordered, ok := topo(tables)
+	inlineFK := ok
+	if !ok {
+		ordered = tables
+	}
+	var stmts []string
+	for _, table := range ordered {
+		stmts = append(stmts, createTableSQL(table, inlineFK))
+		for _, idx := range table.Indexes {
+			stmts = append(stmts, indexSQL(table.Name, idx))
+		}
+	}
+	if inlineFK {
+		return stmts, nil
+	}
+	for _, table := range ordered {
+		for _, fk := range table.ForeignKeys {
+			stmts = append(stmts, "ALTER TABLE "+quote(table.Name)+" ADD "+foreignKeySQL(fk)+";")
+		}
+	}
+	return stmts, nil
+}
+
+func dropTables(tables []schema.Table) ([]string, error) {
+	if len(tables) == 0 {
+		return nil, nil
+	}
+	ordered, ok := topo(tables)
+	if !ok {
+		ordered = tables
+	}
+	var stmts []string
+	for i := len(ordered) - 1; i >= 0; i-- {
+		stmts = append(stmts, "DROP TABLE "+quote(ordered[i].Name)+";")
+	}
+	return stmts, nil
+}
+
+func createTableSQL(table schema.Table, withFK bool) string {
+	pkInline := len(table.PrimaryKey) == 1
+	pkCol := ""
+	if pkInline {
+		pkCol = table.PrimaryKey[0]
+	}
+	var lines []string
+	for _, col := range table.Columns {
+		lines = append(lines, "\t"+columnSQL(col, pkInline && col.Name == pkCol))
+	}
+	if !pkInline && len(table.PrimaryKey) > 0 {
+		lines = append(lines, "\tPRIMARY KEY ("+quoteList(table.PrimaryKey)+")")
+	}
+	for _, unique := range table.Uniques {
+		lines = append(lines, fmt.Sprintf("\tCONSTRAINT %s UNIQUE (%s)", quote(unique.Name), quoteList(unique.Columns)))
+	}
+	for _, check := range table.Checks {
+		lines = append(lines, fmt.Sprintf("\tCONSTRAINT %s CHECK (%s)", quote(check.Name), check.Expr))
+	}
+	if withFK {
+		for _, fk := range table.ForeignKeys {
+			lines = append(lines, "\t"+foreignKeySQL(fk))
+		}
+	}
+	return "CREATE TABLE " + quote(table.Name) + " (\n" + strings.Join(lines, ",\n") + "\n);"
+}
+
+func columnSQL(col schema.Column, primary bool) string {
+	typ := col.Type
+	if col.Identity {
+		typ.Name = identityBase(typ.Name)
+		typ.Enum = false
+	}
+	sql := quote(col.Name) + " " + renderType(typ)
+	if col.Generated != "" {
+		sql += " GENERATED ALWAYS AS (" + col.Generated + ") STORED"
+	}
+	if col.NotNull && !primary {
+		sql += " NOT NULL"
+	}
+	if col.Default != "" && col.Generated == "" && !col.Identity {
+		sql += " DEFAULT " + col.Default
+	}
+	if col.Identity {
+		sql += " GENERATED BY DEFAULT AS IDENTITY"
+	}
+	if primary {
+		sql += " PRIMARY KEY"
+	}
+	return sql
+}
+
+func foreignKeySQL(fk schema.ForeignKey) string {
+	sql := fmt.Sprintf("CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)",
+		quote(fk.Name), quoteList(fk.Columns), quote(fk.RefTable), quoteList(fk.RefColumns))
+	if fk.OnDelete != "" {
+		sql += " ON DELETE " + fk.OnDelete
+	}
+	if fk.OnUpdate != "" {
+		sql += " ON UPDATE " + fk.OnUpdate
+	}
+	return sql
+}
+
+func indexSQL(table string, idx schema.Index) string {
+	unique := ""
+	if idx.Unique {
+		unique = "UNIQUE "
+	}
+	return "CREATE " + unique + "INDEX " + quote(idx.Name) + " ON " + quote(table) + " (" + quoteList(idx.Columns) + ");"
+}
+
+func renderType(typ schema.Type) string {
+	name := typ.Name
+	if typ.Enum {
+		name = quote(name)
+	} else {
+		switch name {
+		case "varchar":
+			if typ.Length > 0 {
+				name = fmt.Sprintf("varchar(%d)", typ.Length)
+			}
+		case "numeric", "decimal":
+			if typ.Precision > 0 && typ.Scale > 0 {
+				name = fmt.Sprintf("%s(%d,%d)", name, typ.Precision, typ.Scale)
+			} else if typ.Precision > 0 {
+				name = fmt.Sprintf("%s(%d)", name, typ.Precision)
+			}
+		}
+	}
+	return name + strings.Repeat("[]", typ.ArrayDims)
+}
+
+func identityBase(name string) string {
+	switch name {
+	case "bigserial", "bigint", "int8":
+		return "bigint"
+	case "serial", "integer", "int4", "int":
+		return "integer"
+	case "smallserial", "smallint", "int2":
+		return "smallint"
+	default:
+		return name
+	}
+}
+
+func topo(tables []schema.Table) ([]schema.Table, bool) {
+	byName := map[string]schema.Table{}
+	indeg := map[string]int{}
+	deps := map[string][]string{}
+	var order []string
+	for _, table := range tables {
+		byName[table.Name] = table
+		order = append(order, table.Name)
+		indeg[table.Name] = 0
+	}
+	for _, table := range tables {
+		seen := map[string]struct{}{}
+		for _, fk := range table.ForeignKeys {
+			if _, ok := byName[fk.RefTable]; !ok || fk.RefTable == table.Name {
+				continue
+			}
+			if _, ok := seen[fk.RefTable]; ok {
+				continue
+			}
+			seen[fk.RefTable] = struct{}{}
+			deps[fk.RefTable] = append(deps[fk.RefTable], table.Name)
+			indeg[table.Name]++
+		}
+	}
+	var ready []string
+	for _, name := range order {
+		if indeg[name] == 0 {
+			ready = append(ready, name)
+		}
+	}
+	var out []schema.Table
+	for len(ready) > 0 {
+		name := ready[0]
+		ready = ready[1:]
+		out = append(out, byName[name])
+		for _, child := range deps[name] {
+			indeg[child]--
+			if indeg[child] == 0 {
+				ready = append(ready, child)
+			}
+		}
+	}
+	if len(out) != len(tables) {
+		return nil, false
+	}
+	return out, true
+}
+
+func quote(name string) string {
+	return pg.Dialect{}.EscapeName(name)
+}
+
+func quoteList(names []string) string {
+	parts := make([]string, len(names))
+	for i, name := range names {
+		parts[i] = quote(name)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func sameType(a, b schema.Type) bool {
+	return a.Name == b.Name && a.Length == b.Length && a.Precision == b.Precision &&
+		a.Scale == b.Scale && a.ArrayDims == b.ArrayDims && a.Enum == b.Enum
+}
+
+func at(loc schema.Loc) string {
+	if loc.File == "" {
+		return ""
+	}
+	return fmt.Sprintf("(%s:%d)", loc.File, loc.Line)
+}
