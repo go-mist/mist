@@ -117,7 +117,12 @@ err := db.Tx(ctx, func(tx *pg.Tx) error {
 
 ## Migrate
 
-Generate the next migration from the schema package, then apply the folder. Both commands are PostgreSQL. The migration table is `drizzle.__drizzle_migrations`.
+Generate the next migration from the schema package, then apply the folder. Both commands are PostgreSQL. The migration table is `drizzle.__drizzle_migrations`. Each migration is a directory. `snapshot.json` is the schema after that migration. A later `ddl -write` adds a new directory and leaves the old one unchanged.
+
+```
+migrations/20261123135846_init/migration.sql
+migrations/20261123135846_init/snapshot.json
+```
 
 ```
 mist ddl -dir . -migrations migrations -write -name init
