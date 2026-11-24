@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/mysql"
 	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
@@ -20,25 +23,41 @@ type taskStore interface {
 }
 
 type dbStore struct {
-	db *pg.DB
+	db    mist.DB
+	idSQL string
 }
 
-func openStore(ctx context.Context, dsn, migrations string) (*dbStore, error) {
+func openStore(ctx context.Context, driver, dsn, migrations string) (*dbStore, error) {
 	if dsn == "" {
-		return nil, errors.New("set -dsn, DATABASE_URL, or DRIZZLE_PG_DSN")
+		return nil, errors.New("set -dsn or the driver environment variable")
 	}
-	db, err := pg.Open(ctx, dsn)
-	if err != nil {
-		return nil, err
+	switch driver {
+	case "pg":
+		db, err := pg.Open(ctx, dsn)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: migrations}); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		return &dbStore{db: db, idSQL: "select lastval()"}, nil
+	case "mysql":
+		db, err := mysql.Open(ctx, dsn)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := migrate.Run(ctx, mysql.Migrator(db), migrate.Config{Folder: migrations}); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		return &dbStore{db: db, idSQL: "select last_insert_id()"}, nil
+	default:
+		return nil, fmt.Errorf("driver %q is not pg or mysql", driver)
 	}
-	if _, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: migrations}); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return &dbStore{db: db}, nil
 }
 
-func (s *dbStore) Close() { s.db.Close() }
+func (s *dbStore) Close() { _ = s.db.Close() }
 
 func (s *dbStore) Add(ctx context.Context, title string) (Task, error) {
 	title = strings.TrimSpace(title)
@@ -47,26 +66,31 @@ func (s *dbStore) Add(ctx context.Context, title string) (Task, error) {
 	}
 	var created Task
 	err := s.db.Tx(ctx, func(tx mist.Tx) error {
-		row, err := pg.Insert(Tasks).
-			Columns(Tasks.Title).
-			Values(title).
-			Returning(Tasks.ID, Tasks.Title, Tasks.Done).
+		if _, err := query.NewInsert(Tasks).Columns(Tasks.Title).Values(title).Exec(ctx, tx); err != nil {
+			return err
+		}
+		id, err := insertedID(ctx, tx, s.idSQL)
+		if err != nil {
+			return err
+		}
+		row, err := query.NewSelect(Tasks.ID, Tasks.Title, Tasks.Done).
+			From(Tasks).
+			Where(op.Eq(Tasks.ID, id)).
 			One(ctx, tx)
 		if err != nil {
 			return err
 		}
-		_, err = pg.Insert(Events).
-			Columns(Events.TaskID, Events.Action).
-			Values(row.ID, "add").
-			Exec(ctx, tx)
+		if _, err := query.NewInsert(Events).Columns(Events.TaskID, Events.Action).Values(row.ID, "add").Exec(ctx, tx); err != nil {
+			return err
+		}
 		created = row
-		return err
+		return nil
 	})
 	return created, err
 }
 
 func (s *dbStore) List(ctx context.Context) ([]Task, error) {
-	return pg.Select(Tasks.ID, Tasks.Title, Tasks.Done).
+	return query.NewSelect(Tasks.ID, Tasks.Title, Tasks.Done).
 		From(Tasks).
 		OrderBy(op.Asc(Tasks.ID)).
 		All(ctx, s.db)
@@ -74,40 +98,23 @@ func (s *dbStore) List(ctx context.Context) ([]Task, error) {
 
 func (s *dbStore) Done(ctx context.Context, id int64) error {
 	return s.db.Tx(ctx, func(tx mist.Tx) error {
-		_, err := pg.Select(Tasks.ID).
-			From(Tasks).
-			Where(op.Eq(Tasks.ID, id)).
-			ForUpdate().
-			One(ctx, tx)
-		if err != nil {
+		if _, err := query.NewSelect(Tasks.ID).From(Tasks).Where(op.Eq(Tasks.ID, id)).ForUpdate().One(ctx, tx); err != nil {
 			return err
 		}
-		_, err = pg.Update(Tasks).
-			Set(Tasks.Done, true).
-			Where(op.Eq(Tasks.ID, id)).
-			Exec(ctx, tx)
-		if err != nil {
+		if _, err := query.NewUpdate(Tasks).Set(Tasks.Done, true).Where(op.Eq(Tasks.ID, id)).Exec(ctx, tx); err != nil {
 			return err
 		}
-		_, err = pg.Insert(Events).
-			Columns(Events.TaskID, Events.Action).
-			Values(id, "done").
-			Exec(ctx, tx)
+		_, err := query.NewInsert(Events).Columns(Events.TaskID, Events.Action).Values(id, "done").Exec(ctx, tx)
 		return err
 	})
 }
 
 func (s *dbStore) Delete(ctx context.Context, id int64) error {
 	return s.db.Tx(ctx, func(tx mist.Tx) error {
-		_, err := pg.Delete(Events).
-			Where(op.Eq(Events.TaskID, id)).
-			Exec(ctx, tx)
-		if err != nil {
+		if _, err := query.NewDelete(Events).Where(op.Eq(Events.TaskID, id)).Exec(ctx, tx); err != nil {
 			return err
 		}
-		n, err := pg.Delete(Tasks).
-			Where(op.Eq(Tasks.ID, id)).
-			Exec(ctx, tx)
+		n, err := query.NewDelete(Tasks).Where(op.Eq(Tasks.ID, id)).Exec(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -116,4 +123,39 @@ func (s *dbStore) Delete(ctx context.Context, id int64) error {
 		}
 		return nil
 	})
+}
+
+func insertedID(ctx context.Context, tx mist.Tx, query string) (int64, error) {
+	rows, err := tx.Query(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, errors.New("insert did not return an id")
+	}
+	var raw any
+	if err := rows.Scan(&raw); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	switch v := raw.(type) {
+	case int64:
+		return v, nil
+	case int32:
+		return int64(v), nil
+	case uint64:
+		return int64(v), nil
+	case []byte:
+		return strconv.ParseInt(string(v), 10, 64)
+	case string:
+		return strconv.ParseInt(v, 10, 64)
+	default:
+		return 0, fmt.Errorf("insert id has type %T", raw)
+	}
 }

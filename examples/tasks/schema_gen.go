@@ -3,22 +3,22 @@
 package main
 
 import (
-	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/sql"
 )
 
 type taskTable struct {
-	pg.TableBase
-	ID    pg.Col[Task, int64]
-	Title pg.Col[Task, string]
-	Done  pg.Col[Task, bool]
+	mist.TableBase
+	ID    mist.Col[Task, int64]
+	Title mist.Col[Task, string]
+	Done  mist.Col[Task, bool]
 }
 
-func scanTask(row pg.Row, dst *Task) error {
+func scanTask(row mist.Row, dst *Task) error {
 	return row.Scan(&dst.ID, &dst.Title, &dst.Done)
 }
 
-func (taskTable) Scan(row pg.Row, dst *Task) error {
+func (taskTable) Scan(row mist.Row, dst *Task) error {
 	return scanTask(row, dst)
 }
 
@@ -34,27 +34,27 @@ func (taskTable) PrimaryKey() []string {
 	return []string{"id"}
 }
 
-func (taskTable) ColumnSpecs() []pg.ColumnSpec {
-	return []pg.ColumnSpec{
-		{Name: "id", SQLType: "bigserial", NotNull: true, PrimaryKey: true},
+func (taskTable) ColumnSpecs() []mist.ColumnSpec {
+	return []mist.ColumnSpec{
+		{Name: "id", SQLType: "bigint", NotNull: true, PrimaryKey: true},
 		{Name: "title", SQLType: "text", NotNull: true},
 		{Name: "done", SQLType: "boolean", NotNull: true, Default: "false"},
 	}
 }
 
 var Tasks = taskTable{
-	TableBase: pg.TableBase{SQLName: "tasks"},
-	ID: pg.Col[Task, int64]{
+	TableBase: mist.TableBase{SQLName: "tasks"},
+	ID: mist.Col[Task, int64]{
 		Table: "tasks",
 		Name:  "id",
 		Ptr:   func(v *Task) any { return &v.ID },
 	},
-	Title: pg.Col[Task, string]{
+	Title: mist.Col[Task, string]{
 		Table: "tasks",
 		Name:  "title",
 		Ptr:   func(v *Task) any { return &v.Title },
 	},
-	Done: pg.Col[Task, bool]{
+	Done: mist.Col[Task, bool]{
 		Table: "tasks",
 		Name:  "done",
 		Ptr:   func(v *Task) any { return &v.Done },
@@ -62,17 +62,17 @@ var Tasks = taskTable{
 }
 
 type eventTable struct {
-	pg.TableBase
-	ID     pg.Col[Event, int64]
-	TaskID pg.Col[Event, int64]
-	Action pg.Col[Event, string]
+	mist.TableBase
+	ID     mist.Col[Event, int64]
+	TaskID mist.Col[Event, int64]
+	Action mist.Col[Event, string]
 }
 
-func scanEvent(row pg.Row, dst *Event) error {
+func scanEvent(row mist.Row, dst *Event) error {
 	return row.Scan(&dst.ID, &dst.TaskID, &dst.Action)
 }
 
-func (eventTable) Scan(row pg.Row, dst *Event) error {
+func (eventTable) Scan(row mist.Row, dst *Event) error {
 	return scanEvent(row, dst)
 }
 
@@ -88,27 +88,27 @@ func (eventTable) PrimaryKey() []string {
 	return []string{"id"}
 }
 
-func (eventTable) ColumnSpecs() []pg.ColumnSpec {
-	return []pg.ColumnSpec{
-		{Name: "id", SQLType: "bigserial", NotNull: true, PrimaryKey: true},
+func (eventTable) ColumnSpecs() []mist.ColumnSpec {
+	return []mist.ColumnSpec{
+		{Name: "id", SQLType: "bigint", NotNull: true, PrimaryKey: true},
 		{Name: "task_id", SQLType: "bigint", NotNull: true, References: "tasks.id"},
 		{Name: "action", SQLType: "text", NotNull: true},
 	}
 }
 
 var Events = eventTable{
-	TableBase: pg.TableBase{SQLName: "task_events"},
-	ID: pg.Col[Event, int64]{
+	TableBase: mist.TableBase{SQLName: "task_events"},
+	ID: mist.Col[Event, int64]{
 		Table: "task_events",
 		Name:  "id",
 		Ptr:   func(v *Event) any { return &v.ID },
 	},
-	TaskID: pg.Col[Event, int64]{
+	TaskID: mist.Col[Event, int64]{
 		Table: "task_events",
 		Name:  "task_id",
 		Ptr:   func(v *Event) any { return &v.TaskID },
 	},
-	Action: pg.Col[Event, string]{
+	Action: mist.Col[Event, string]{
 		Table: "task_events",
 		Name:  "action",
 		Ptr:   func(v *Event) any { return &v.Action },

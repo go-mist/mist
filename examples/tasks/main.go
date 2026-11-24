@@ -38,54 +38,83 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(os.Stderr, `tasks is a small task list on PostgreSQL.
+	fmt.Fprint(os.Stderr, `tasks is a small task list. -driver selects PostgreSQL or MySQL.
 
-  tasks serve [-addr :8080] [-dsn dsn] [-migrations migrations]
-  tasks add [-dsn dsn] [-migrations migrations] title
-  tasks list [-dsn dsn] [-migrations migrations]
-  tasks done [-dsn dsn] [-migrations migrations] id
-  tasks delete [-dsn dsn] [-migrations migrations] id
+  tasks serve [-driver pg] [-addr :8080] [-dsn dsn] [-migrations migrations]
+  tasks add [-driver pg] [-dsn dsn] [-migrations migrations] title
+  tasks list [-driver pg] [-dsn dsn] [-migrations migrations]
+  tasks done [-driver pg] [-dsn dsn] [-migrations migrations] id
+  tasks delete [-driver pg] [-dsn dsn] [-migrations migrations] id
 
-The connection string is -dsn, else DATABASE_URL, else DRIZZLE_PG_DSN.
+PostgreSQL reads -dsn, else DATABASE_URL, else DRIZZLE_PG_DSN.
+MySQL reads -dsn, else DRIZZLE_MYSQL_DSN.
 Startup applies the migrations directory with migrate.Run.
 `)
 }
 
 type connFlags struct {
+	driver     string
 	dsn        string
 	migrations string
 }
 
-func parseConn(args []string) (connFlags, []string) {
+func parseConn(args []string) (connFlags, []string, error) {
 	fs := flag.NewFlagSet("tasks", flag.ExitOnError)
 	c := connFlags{}
-	fs.StringVar(&c.dsn, "dsn", "", "postgres connection string")
-	fs.StringVar(&c.migrations, "migrations", "migrations", "migrations directory")
+	fs.StringVar(&c.driver, "driver", "pg", "pg or mysql")
+	fs.StringVar(&c.dsn, "dsn", "", "connection string")
+	fs.StringVar(&c.migrations, "migrations", "", "migrations directory")
 	_ = fs.Parse(args)
-	if c.dsn == "" {
-		c.dsn = os.Getenv("DATABASE_URL")
+	if err := c.resolve(); err != nil {
+		return connFlags{}, nil, err
+	}
+	return c, fs.Args(), nil
+}
+
+func (c *connFlags) resolve() error {
+	switch c.driver {
+	case "", "pg", "postgres":
+		c.driver = "pg"
+		if c.dsn == "" {
+			c.dsn = os.Getenv("DATABASE_URL")
+		}
+		if c.dsn == "" {
+			c.dsn = os.Getenv("DRIZZLE_PG_DSN")
+		}
+		if c.migrations == "" {
+			c.migrations = "migrations"
+		}
+	case "mysql":
+		if c.dsn == "" {
+			c.dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
+		}
+		if c.migrations == "" {
+			c.migrations = "migrations/mysql"
+		}
+	default:
+		return fmt.Errorf("driver %q is not pg or mysql", c.driver)
 	}
 	if c.dsn == "" {
-		c.dsn = os.Getenv("DRIZZLE_PG_DSN")
+		return errors.New("set -dsn or the driver environment variable")
 	}
-	return c, fs.Args()
+	return nil
 }
 
 func serve(args []string) int {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	addr := fs.String("addr", ":8080", "listen address")
-	dsn := fs.String("dsn", "", "postgres connection string")
-	migrations := fs.String("migrations", "migrations", "migrations directory")
+	driver := fs.String("driver", "pg", "pg or mysql")
+	dsn := fs.String("dsn", "", "connection string")
+	migrations := fs.String("migrations", "", "migrations directory")
 	_ = fs.Parse(args)
-	if *dsn == "" {
-		*dsn = os.Getenv("DATABASE_URL")
-	}
-	if *dsn == "" {
-		*dsn = os.Getenv("DRIZZLE_PG_DSN")
+	conn := connFlags{driver: *driver, dsn: *dsn, migrations: *migrations}
+	if err := conn.resolve(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	store, err := openStore(ctx, *dsn, *migrations)
+	store, err := openStore(ctx, conn.driver, conn.dsn, conn.migrations)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -105,7 +134,11 @@ func serve(args []string) int {
 }
 
 func add(args []string) int {
-	c, rest := parseConn(args)
+	c, rest, err := parseConn(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if len(rest) == 0 {
 		fmt.Fprintln(os.Stderr, errTitle)
 		return 2
@@ -115,7 +148,7 @@ func add(args []string) int {
 		title += " " + part
 	}
 	ctx := context.Background()
-	store, err := openStore(ctx, c.dsn, c.migrations)
+	store, err := openStore(ctx, c.driver, c.dsn, c.migrations)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -131,9 +164,13 @@ func add(args []string) int {
 }
 
 func list(args []string) int {
-	c, _ := parseConn(args)
+	c, _, err := parseConn(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	ctx := context.Background()
-	store, err := openStore(ctx, c.dsn, c.migrations)
+	store, err := openStore(ctx, c.driver, c.dsn, c.migrations)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -163,7 +200,11 @@ func delete(args []string) int {
 }
 
 func withID(args []string, fn func(context.Context, *dbStore, int64) error) int {
-	c, rest := parseConn(args)
+	c, rest, err := parseConn(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if len(rest) != 1 {
 		fmt.Fprintln(os.Stderr, "id is required")
 		return 2
@@ -174,7 +215,7 @@ func withID(args []string, fn func(context.Context, *dbStore, int64) error) int 
 		return 2
 	}
 	ctx := context.Background()
-	store, err := openStore(ctx, c.dsn, c.migrations)
+	store, err := openStore(ctx, c.driver, c.dsn, c.migrations)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1

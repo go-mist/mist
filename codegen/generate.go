@@ -448,19 +448,31 @@ func (g *loader) parseTag(fileName string, line int, field string, expr ast.Expr
 	if err != nil {
 		return column{}, g.err(fileName, line, "field %s %s", field, err.Error())
 	}
-	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+	if len(parts) < 1 || parts[0] == "" {
 		return column{}, g.err(fileName, line, "field %s tag must be name,type", field)
 	}
 	goType, err := exprString(expr)
 	if err != nil {
 		return column{}, g.err(fileName, line, "field %s %s", field, err.Error())
 	}
+	mods := parts[1:]
+	sqlType := ""
+	if len(mods) > 0 && !knownModifier(mods[0]) {
+		sqlType = mods[0]
+		mods = mods[1:]
+	}
+	if sqlType == "" {
+		sqlType, err = inferSQL(goType)
+		if err != nil {
+			return column{}, g.err(fileName, line, "field %s tag must be name,type", field)
+		}
+	}
 	col := column{
 		line: line, file: fileName, field: field, path: field,
-		goType: goType, colName: parts[0], sqlType: parts[1],
+		goType: goType, colName: parts[0], sqlType: sqlType,
 	}
 	var hasOnDelete, hasOnUpdate, sawDefault, sawPrec bool
-	for _, mod := range parts[2:] {
+	for _, mod := range mods {
 		if mod == "" {
 			continue
 		}
@@ -652,6 +664,46 @@ func splitTag(raw string) ([]string, error) {
 	}
 	parts = append(parts, strings.TrimSpace(b.String()))
 	return parts, nil
+}
+
+func knownModifier(part string) bool {
+	key, _, hasValue := strings.Cut(part, "=")
+	if key == "enum" {
+		return hasValue
+	}
+	switch key {
+	case "pk", "notnull", "unique", "default", "defaultnow", "references",
+		"ondelete", "onupdate", "length", "precision", "scale", "precis",
+		"generated", "identity", "enum":
+		return true
+	default:
+		return false
+	}
+}
+
+func inferSQL(goType string) (string, error) {
+	base, _, err := splitPtr(goType)
+	if err != nil {
+		return "", err
+	}
+	switch base {
+	case "int64":
+		return "bigint", nil
+	case "int32":
+		return "integer", nil
+	case "int16":
+		return "smallint", nil
+	case "string":
+		return "text", nil
+	case "bool":
+		return "boolean", nil
+	case "time.Time":
+		return "timestamp", nil
+	case "[]byte":
+		return "bytea", nil
+	default:
+		return "", fmt.Errorf("cannot infer an SQL type from %s", goType)
+	}
 }
 
 func unquoteMod(val string) (string, error) {
@@ -970,19 +1022,19 @@ type tableBody struct {
 
 func tableLiteral(fn *ast.FuncDecl) (tableBody, error) {
 	if fn.Body == nil || len(fn.Body.List) != 1 {
-		return tableBody{}, fmt.Errorf("must be a single return of pg.TableMeta{...} or mysql.TableMeta{...}")
+		return tableBody{}, fmt.Errorf("must be a single return of mist.TableMeta{...}, pg.TableMeta{...}, or mysql.TableMeta{...}")
 	}
 	ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
 	if !ok || len(ret.Results) != 1 {
-		return tableBody{}, fmt.Errorf("must be a single return of pg.TableMeta{...} or mysql.TableMeta{...}")
+		return tableBody{}, fmt.Errorf("must be a single return of mist.TableMeta{...}, pg.TableMeta{...}, or mysql.TableMeta{...}")
 	}
 	lit, ok := ret.Results[0].(*ast.CompositeLit)
 	if !ok {
-		return tableBody{}, fmt.Errorf("must return pg.TableMeta{...} or mysql.TableMeta{...}")
+		return tableBody{}, fmt.Errorf("must return mist.TableMeta{...}, pg.TableMeta{...}, or mysql.TableMeta{...}")
 	}
 	pkgName, typeName, named := compositeName(lit.Type)
-	if !named || typeName != "TableMeta" || (pkgName != "pg" && pkgName != "mysql") {
-		return tableBody{}, fmt.Errorf("must return pg.TableMeta{...} or mysql.TableMeta{...}")
+	if !named || typeName != "TableMeta" || (pkgName != "pg" && pkgName != "mysql" && pkgName != "mist") {
+		return tableBody{}, fmt.Errorf("must return mist.TableMeta{...}, pg.TableMeta{...}, or mysql.TableMeta{...}")
 	}
 	var body tableBody
 	body.dialect = pkgName

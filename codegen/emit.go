@@ -21,12 +21,12 @@ func emit(pkg string, tables []table) ([]byte, error) {
 		b.WriteByte('\n')
 	}
 	dialect := "pg"
-	if len(tables) > 0 && tables[0].dialect == "mysql" {
-		dialect = "mysql"
+	if len(tables) > 0 {
+		dialect = tables[0].dialect
 	}
-	fmt.Fprintf(&b, "\t\"github.com/go-mist/mist/%s\"\n", dialect)
+	fmt.Fprintf(&b, "\t%q\n", dialectImport(dialect))
 	if needsCodecs(tables) {
-		fmt.Fprintf(&b, "\t\"github.com/go-mist/mist/%s/codecs\"\n", dialect)
+		fmt.Fprintf(&b, "\t%q\n", dialectImport(dialect)+"/codecs")
 	}
 	b.WriteString("\t\"github.com/go-mist/mist/sql\"\n)\n\n")
 	for i, t := range tables {
@@ -75,11 +75,28 @@ func needsTime(tables []table) bool {
 	return false
 }
 
-func writeTable(b *strings.Builder, t table) {
-	q := "pg"
-	if t.dialect == "mysql" {
-		q = "mysql"
+func dialectImport(dialect string) string {
+	switch dialect {
+	case "mysql":
+		return "github.com/go-mist/mist/mysql"
+	case "mist":
+		return "github.com/go-mist/mist"
+	default:
+		return "github.com/go-mist/mist/pg"
 	}
+}
+
+func dialectPrefix(dialect string) string {
+	switch dialect {
+	case "mysql", "mist":
+		return dialect
+	default:
+		return "pg"
+	}
+}
+
+func writeTable(b *strings.Builder, t table) {
+	q := dialectPrefix(t.dialect)
 	st := unexport(t.typeName) + "Table"
 	fmt.Fprintf(b, "type %s struct {\n\t%s.TableBase\n", st, q)
 	for _, c := range t.cols {
@@ -134,6 +151,9 @@ func codecGo(c column, dialect, table string) string {
 }
 
 func codecExpr(c column, dialect string) string {
+	if dialect == "mist" {
+		return ""
+	}
 	if dialect == "mysql" {
 		switch c.sqlType {
 		case "numeric", "decimal":

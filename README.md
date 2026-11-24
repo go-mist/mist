@@ -19,22 +19,24 @@ package schema
 import (
 	"time"
 
-	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist"
 )
 
 //go:generate mist generate
 
 type User struct {
-	ID        int64     `mist:"id,bigserial,pk"`
-	Name      string    `mist:"name,text,notnull"`
-	Email     *string   `mist:"email,text,unique"`
-	CreatedAt time.Time `mist:"created_at,timestamptz,notnull,default=now()"`
+	ID        int64     `mist:"id,pk"`
+	Name      string    `mist:"name,notnull"`
+	Email     *string   `mist:"email,unique"`
+	CreatedAt time.Time `mist:"created_at,notnull,defaultnow"`
 }
 
-func (User) Table() pg.TableMeta { return pg.TableMeta{Name: "users"} }
+func (User) Table() mist.TableMeta { return mist.TableMeta{Name: "users"} }
 ```
 
-The generated value is `Users`. MySQL and SQLite use the same tags with `mysql.TableMeta` and `sqlite.TableMeta`.
+The generated value is `Users`. A missing SQL type is filled from the Go type: `int64` is `bigint`, `int32` is `integer`, `int16` is `smallint`, `string` is `text`, `bool` is `boolean`, `time.Time` is `timestamp`, `[]byte` is `bytea`. A nullable column is a pointer. This fills `ColumnSpecs`. It does not create the table, and it does not turn `id,pk` into `bigserial` or `AUTO_INCREMENT`.
+
+Write the SQL type when that list is not the column you want: `mist:"id,bigserial,pk"`, `mist:"created_at,timestamptz,notnull,default=now()"`, `varchar`, `uuid`, `jsonb`. `Table()` may return `pg.TableMeta` or `mysql.TableMeta` instead. Those generate `pg.Col` and `mysql.Col`, including that dialect's codecs. `mist.TableMeta` generates `mist.Col` and no codec. One directory uses one of the three.
 
 ## Open
 
@@ -103,10 +105,10 @@ n, err := pg.Delete(Users).
 
 ## Transactions
 
-`Tx` commits when the function returns nil and rolls back when it returns an error. A `Tx` inside a `Tx` is a savepoint. Queries take the `*Tx` the same way they take `*DB`.
+`Tx` commits when the function returns nil and rolls back when it returns an error. A `Tx` inside a `Tx` is a savepoint. The callback receives `mist.Tx`. Queries take it the same way they take `mist.DB`.
 
 ```go
-err := db.Tx(ctx, func(tx *pg.Tx) error {
+err := db.Tx(ctx, func(tx mist.Tx) error {
 	_, err := pg.Insert(Users).
 		Columns(Users.ID, Users.Name).
 		Values(int64(2), "cam").
@@ -149,12 +151,15 @@ applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{
 
 ## Example
 
-[`examples/tasks`](examples/tasks) is a task list. The command line and the HTTP server use the standard library. It generates the schema, applies the PostgreSQL migrations, and runs insert, select, update, delete, and transactions.
+[`examples/tasks`](examples/tasks) is a task list. `Task` and `Event` use `mist.TableMeta`, and the tags leave the SQL type to the Go type. Queries go through `mist.DB`. `-driver` chooses `Open` and the migration folder. The folders are different SQL: `migrations` is PostgreSQL (`bigserial`, `boolean`), `migrations/mysql` is MySQL (`AUTO_INCREMENT`, `tinyint(1)`). An insert reads `lastval()` or `last_insert_id()` in the same transaction, then writes the event. The command line and the HTTP server use the standard library.
 
 ```
 cd examples/tasks
-export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/app?sslmode=disable
+export DRIZZLE_PG_DSN=postgres://postgres:postgres@127.0.0.1:5432/drizzle?sslmode=disable
+export DRIZZLE_MYSQL_DSN='root:root@tcp(127.0.0.1:3306)/mist?parseTime=true'
 go run . add "buy milk"
+go run . list
+go run . add -driver mysql "buy milk"
 go run . serve
 ```
 

@@ -354,6 +354,44 @@ func TestGenerateMySQLRejects(t *testing.T) {
 	}
 }
 
+func TestGenerateMistInfersTypes(t *testing.T) {
+	body := "package schema\n\nimport \"github.com/go-mist/mist\"\n\n" +
+		"type Task struct {\n" +
+		"\tID int64 `mist:\"id,pk\"`\n" +
+		"\tTitle string `mist:\"title,notnull\"`\n" +
+		"\tDone bool `mist:\"done,notnull,default=false\"`\n" +
+		"}\n\n" +
+		"func (Task) Table() mist.TableMeta { return mist.TableMeta{Name: \"tasks\"} }\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "schema.go"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := codegen.Generate(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "schema_gen.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(got)
+	for _, want := range []string{
+		`"github.com/go-mist/mist"`,
+		`mist.Col[Task, int64]`,
+		`mist.Col[Task, bool]`,
+		`SQLType: "bigint"`,
+		`SQLType: "text"`,
+		`SQLType: "boolean"`,
+		`Default: "false"`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %s\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "codecs.") {
+		t.Fatalf("portable columns must not emit a codec\n%s", text)
+	}
+}
+
 func fixtureDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
