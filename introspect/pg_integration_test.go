@@ -9,13 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/codegen"
 	ddlpg "github.com/go-mist/mist/ddl/pg"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -84,7 +85,7 @@ func roundTrip(t *testing.T, ctx context.Context, db *pg.DB, schemaName string, 
 		t.Fatal(err)
 	}
 	reset(t, ctx, db, schemaName)
-	err = db.Tx(ctx, func(tx *pg.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := tx.Exec(ctx, "set local search_path to "+pg.Dialect{}.EscapeName(schemaName)); err != nil {
 			return err
 		}
@@ -231,6 +232,6 @@ func openDB(t *testing.T, ctx context.Context) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

@@ -40,7 +40,7 @@ func TestRevisionsApply(t *testing.T) {
 		_, _ = db.Exec(context.Background(), "drop schema if exists "+quoted+" cascade")
 		_, _ = db.Exec(context.Background(), "drop schema if exists "+pg.Dialect{}.EscapeName("m7revmig")+" cascade")
 	})
-	applied, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: folder, Schema: "m7revmig"})
+	applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: folder, Schema: "m7revmig"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestRevisionsApply(t *testing.T) {
 	if changes := diff.Diff(usersV3(), got); len(changes) != 0 {
 		t.Fatalf("%+v", changes)
 	}
-	again, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: folder, Schema: "m7revmig"})
+	again, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: folder, Schema: "m7revmig"})
 	if err != nil || again != 0 {
 		t.Fatal(err, again)
 	}
@@ -73,6 +73,6 @@ func openRevDB(t *testing.T, ctx context.Context) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

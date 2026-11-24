@@ -68,7 +68,7 @@ var Users = userTable{
 		Table: "users",
 		Name:  "created_at",
 		Ptr:   func(v *User) any { return &v.CreatedAt },
-		Codec: codecs.Timestamptz.Bind("created_at"),
+		Codec: codecs.Timestamptz.Bind("created_at").At("users"),
 	},
 }
 

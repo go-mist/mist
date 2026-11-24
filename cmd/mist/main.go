@@ -12,14 +12,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/codegen"
 	pgddl "github.com/go-mist/mist/ddl/pg"
 	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/introspect"
 	"github.com/go-mist/mist/migrate"
+	"github.com/go-mist/mist/mysql"
 	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
+	"github.com/go-mist/mist/sqlite"
 )
 
 var schemaIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -130,7 +133,8 @@ func check(args []string) {
 func apply(args []string) {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
 	migrations := fs.String("migrations", "", "migration folder")
-	dsn := fs.String("dsn", os.Getenv("DRIZZLE_PG_DSN"), "postgres dsn")
+	driver := fs.String("driver", "pg", "pg, mysql, or sqlite")
+	dsn := fs.String("dsn", "", "connection string")
 	schemaName := fs.String("schema", "", "schema of the migration table")
 	table := fs.String("table", "", "migration table")
 	_ = fs.Parse(args)
@@ -138,15 +142,25 @@ func apply(args []string) {
 		fail(fmt.Errorf("migrate: -migrations is required"))
 	}
 	if *dsn == "" {
-		fail(fmt.Errorf("migrate: -dsn or DRIZZLE_PG_DSN is required"))
+		switch *driver {
+		case "mysql":
+			*dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
+		case "sqlite":
+			*dsn = ""
+		default:
+			*dsn = os.Getenv("DRIZZLE_PG_DSN")
+		}
+	}
+	if *dsn == "" {
+		fail(fmt.Errorf("migrate: -dsn is required"))
 	}
 	ctx := context.Background()
-	db, err := pg.Open(ctx, *dsn)
+	conn, closeConn, err := openMigrate(ctx, *driver, *dsn)
 	if err != nil {
 		fail(err)
 	}
-	defer db.Close()
-	applied, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{
+	defer closeConn()
+	applied, err := migrate.Run(ctx, conn, migrate.Config{
 		Folder: *migrations,
 		Schema: *schemaName,
 		Table:  *table,
@@ -155,6 +169,31 @@ func apply(args []string) {
 		fail(err)
 	}
 	fmt.Println(applied)
+}
+
+func openMigrate(ctx context.Context, driver, dsn string) (migrate.Conn, func() error, error) {
+	switch driver {
+	case "pg", "postgres":
+		db, err := pg.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return pg.Migrator(db), db.Close, nil
+	case "mysql":
+		db, err := mysql.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return mysql.Migrator(db), db.Close, nil
+	case "sqlite":
+		db, err := sqlite.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return sqlite.Migrator(db), db.Close, nil
+	default:
+		return nil, nil, fmt.Errorf("migrate: driver %q is not pg, mysql, or sqlite", driver)
+	}
 }
 
 func push(args []string) {
@@ -200,7 +239,7 @@ func push(args []string) {
 		return
 	}
 	quoted := pg.Dialect{}.EscapeName(*schemaName)
-	err = db.Tx(ctx, func(tx *pg.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := tx.Exec(ctx, "create schema if not exists "+quoted); err != nil {
 			return err
 		}

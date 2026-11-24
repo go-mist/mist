@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	_ "github.com/glebarez/go-sqlite"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/logger"
 	"github.com/go-mist/mist/query"
 )
@@ -110,7 +111,7 @@ func (db *DB) Prepare(ctx context.Context, sqlText string) (query.Stmt, error) {
 }
 
 // Tx starts a transaction. It rolls back when fn returns an error or panics, and commits otherwise.
-func (db *DB) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (db *DB) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if db.sqldb == nil {
 		return errors.New("sqlite: no connection pool")
 	}
@@ -159,7 +160,7 @@ func (t *Tx) Prepare(ctx context.Context, sqlText string) (query.Stmt, error) {
 }
 
 // Tx opens a savepoint inside the current transaction.
-func (t *Tx) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (t *Tx) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if t.tx == nil {
 		return errors.New("sqlite: no transaction")
 	}

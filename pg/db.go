@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/logger"
 	"github.com/go-mist/mist/query"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // stmtSeq names server-side statements on a transaction. Statements on the pool take no name; see poolStmt.
@@ -69,10 +70,11 @@ func OpenConfig(ctx context.Context, cfg *pgxpool.Config, opts ...Option) (*DB, 
 }
 
 // Close closes the connection pool.
-func (db *DB) Close() {
+func (db *DB) Close() error {
 	if db.pool != nil {
 		db.pool.Close()
 	}
+	return nil
 }
 
 // Query runs a query.
@@ -107,11 +109,11 @@ func (db *DB) Prepare(_ context.Context, sql string) (query.Stmt, error) {
 }
 
 // Tx opens a transaction. It rolls back when fn returns an error or panics, and commits otherwise.
-func (db *DB) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (db *DB) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if db.pool == nil {
 		return errors.New("pg: no connection pool")
 	}
-	return transact(ctx, db.pool.Begin, db.logger, fn)
+	return transact(ctx, db.pool.Begin, db.logger, func(tx *Tx) error { return fn(tx) })
 }
 
 // Query runs a query in the transaction.
@@ -150,11 +152,11 @@ func (t *Tx) Prepare(ctx context.Context, sqlText string) (query.Stmt, error) {
 }
 
 // Tx opens a savepoint in the current transaction.
-func (t *Tx) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (t *Tx) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if t.tx == nil {
 		return errors.New("pg: no transaction")
 	}
-	return transact(ctx, t.tx.Begin, t.logger, fn)
+	return transact(ctx, t.tx.Begin, t.logger, func(tx *Tx) error { return fn(tx) })
 }
 
 func transact(ctx context.Context, begin func(context.Context) (pgx.Tx, error), lg logger.Logger, fn func(*Tx) error) (err error) {

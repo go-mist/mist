@@ -15,6 +15,19 @@ var ErrNoRows = errors.New("query: no rows")
 // ErrManyRows means One read multiple rows.
 var ErrManyRows = errors.New("query: multiple rows")
 
+// MissingField reports a selected column whose generated field pointer is nil.
+func MissingField(col interface{ ColName() string }) error {
+	name := col.ColName()
+	table := ""
+	if named, ok := col.(interface{ TableName() string }); ok {
+		table = named.TableName()
+	}
+	if table == "" {
+		return fmt.Errorf("query: column %s: expected a field pointer", name)
+	}
+	return fmt.Errorf("query: table %s column %s: expected a field pointer", table, name)
+}
+
 // Rows is the row cursor a query returns.
 type Rows interface {
 	Next() bool
@@ -301,7 +314,7 @@ func fillCols[T any](row sql.Row, cols []Column[T], dst *T, dest []any) error {
 	for i, col := range cols {
 		ptr := col.FieldPtr(dst)
 		if ptr == nil {
-			return fmt.Errorf("query: column %s has no field pointer", col.ColName())
+			return MissingField(col)
 		}
 		dest[i] = ptr
 	}

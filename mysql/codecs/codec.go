@@ -23,9 +23,16 @@ type Codec interface {
 
 // Bound binds a codec to one column. Error messages include the column name and the expected type.
 type Bound struct {
+	Table   string
 	Column  string
 	SQLType string
 	Inner   Codec
+}
+
+// At sets the table name used in conversion errors.
+func (b Bound) At(table string) Bound {
+	b.Table = table
+	return b
 }
 
 // Bind binds a codec to a column name.
@@ -59,7 +66,7 @@ func (b Bound) NormalizeParam(value any, _ int) (any, error) {
 	value = deref(value)
 	got, err := b.Inner.NormalizeParam(value, 0)
 	if err != nil {
-		return nil, fmt.Errorf("mysql: column %s expected %s, %w", b.Column, b.SQLType, err)
+		return nil, b.fail(err)
 	}
 	return got, nil
 }
@@ -160,6 +167,13 @@ func (blobCodec) NormalizeParam(value any, _ int) (any, error) {
 		return nil, typeOf(value)
 	}
 	return b, nil
+}
+
+func (b Bound) fail(err error) error {
+	if b.Table == "" {
+		return fmt.Errorf("mysql: column %s expected %s, %w", b.Column, b.SQLType, err)
+	}
+	return fmt.Errorf("mysql: table %s column %s expected %s, %w", b.Table, b.Column, b.SQLType, err)
 }
 
 func typeOf(value any) error {

@@ -81,6 +81,6 @@ func openRaceDB(t *testing.T, ctx context.Context) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

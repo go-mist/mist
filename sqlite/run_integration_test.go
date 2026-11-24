@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/sql"
@@ -241,11 +242,11 @@ func TestCRUD(t *testing.T) {
 		t.Fatalf("%+v", matched)
 	}
 
-	err = db.Tx(ctx, func(tx *sqlite.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := sqlite.Insert(users).Columns(users.ID, users.Name).Values(int64(9), "tmp").Exec(ctx, tx); err != nil {
 			return err
 		}
-		err := tx.Tx(ctx, func(inner *sqlite.Tx) error {
+		err := tx.Tx(ctx, func(inner mist.Tx) error {
 			if _, err := sqlite.Update(users).Set(users.Name, "rolled").Where(op.Eq(users.ID, int64(9))).Exec(ctx, inner); err != nil {
 				return err
 			}

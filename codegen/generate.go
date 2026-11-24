@@ -586,39 +586,39 @@ func (g *loader) parseTag(fileName string, line int, field string, expr ast.Expr
 		}
 	}
 	if (hasOnDelete || hasOnUpdate) && col.refTable == "" {
-		return column{}, g.err(fileName, line, "ondelete / onupdate require references")
+		return column{}, g.err(fileName, line, "column %s: ondelete / onupdate require references", col.colName)
 	}
 	if col.length > 0 && col.sqlType != "varchar" && col.sqlType != "char" {
-		return column{}, g.err(fileName, line, "length is only for varchar or char")
+		return column{}, g.err(fileName, line, "column %s: length is only for varchar or char", col.colName)
 	}
 	if (col.precision > 0 || col.scale > 0) && col.sqlType != "numeric" && col.sqlType != "decimal" {
-		return column{}, g.err(fileName, line, "precision / scale are only for numeric")
+		return column{}, g.err(fileName, line, "column %s: precision / scale are only for numeric", col.colName)
 	}
 	if col.scale > 0 && col.precision == 0 {
-		return column{}, g.err(fileName, line, "scale requires precision")
+		return column{}, g.err(fileName, line, "column %s: scale requires precision", col.colName)
 	}
 	if col.identity {
 		if _, ok := integerTypes[col.sqlType]; !ok {
-			return column{}, g.err(fileName, line, "identity is only for integer columns")
+			return column{}, g.err(fileName, line, "column %s: identity is only for integer columns", col.colName)
 		}
 		if col.def != "" {
-			return column{}, g.err(fileName, line, "identity cannot be combined with default")
+			return column{}, g.err(fileName, line, "column %s: identity cannot be combined with default", col.colName)
 		}
 		if col.generated != "" {
-			return column{}, g.err(fileName, line, "identity cannot be combined with generated")
+			return column{}, g.err(fileName, line, "column %s: identity cannot be combined with generated", col.colName)
 		}
 	}
 	if col.generated != "" && col.def != "" {
-		return column{}, g.err(fileName, line, "generated cannot be combined with default")
+		return column{}, g.err(fileName, line, "column %s: generated cannot be combined with default", col.colName)
 	}
 	if col.def == "now()" && !timeTypes[col.sqlType] && !strings.Contains(raw, "default=") {
-		return column{}, g.err(fileName, line, "defaultnow is only for time columns")
+		return column{}, g.err(fileName, line, "column %s: defaultnow is only for time columns", col.colName)
 	}
 	if col.sqlType == "enum" && col.enumName == "" {
-		return column{}, g.err(fileName, line, "enum requires a type name")
+		return column{}, g.err(fileName, line, "column %s: enum requires a type name", col.colName)
 	}
 	if col.enumName != "" && col.sqlType != "enum" {
-		return column{}, g.err(fileName, line, "enum is only valid on an enum type")
+		return column{}, g.err(fileName, line, "column %s: enum is only valid on an enum type", col.colName)
 	}
 	return col, nil
 }
@@ -706,9 +706,9 @@ func (g *loader) validate() error {
 		}
 		for _, c := range t.cols {
 			if t.dialect == "mysql" && c.identity {
-				g.fail(c.file, c.line, "column %s: MySQL has no identity", c.colName)
+				g.fail(c.file, c.line, "table %s column %s: MySQL has no identity", t.sqlName, c.colName)
 			}
-			g.checkType(c, inPK, t.dialect)
+			g.checkType(t.sqlName, c, inPK, t.dialect)
 		}
 	}
 	for _, t := range g.tables {
@@ -718,7 +718,7 @@ func (g *loader) validate() error {
 			}
 			other, ok := seenSQL[c.refTable]
 			if !ok {
-				g.fail(c.file, c.line, "references=%s.%s: table %s was not found", c.refTable, c.refCol, c.refTable)
+				g.fail(c.file, c.line, "table %s column %s: references=%s.%s: table %s was not found", t.sqlName, c.colName, c.refTable, c.refCol, c.refTable)
 				continue
 			}
 			found := false
@@ -729,7 +729,7 @@ func (g *loader) validate() error {
 				}
 			}
 			if !found {
-				g.fail(c.file, c.line, "references=%s.%s: column %s was not found", c.refTable, c.refCol, c.refCol)
+				g.fail(c.file, c.line, "table %s column %s: references=%s.%s: column %s was not found", t.sqlName, c.colName, c.refTable, c.refCol, c.refCol)
 			}
 		}
 	}
@@ -797,39 +797,39 @@ func (g *loader) checkTableConstraints(t *table, columnPKs int) {
 	}
 }
 
-func (g *loader) checkType(c column, inPK map[string]struct{}, dialect string) {
+func (g *loader) checkType(tableName string, c column, inPK map[string]struct{}, dialect string) {
 	if dialect == "mysql" && strings.Contains(c.sqlType, "[]") {
-		g.fail(c.file, c.line, "column %s type %s: MySQL has no arrays", c.colName, c.sqlType)
+		g.fail(c.file, c.line, "table %s column %s type %s: MySQL has no arrays", tableName, c.colName, c.sqlType)
 		return
 	}
 	if dialect == "mysql" {
 		if msg, banned := mysqlReject[c.sqlType]; banned {
-			g.fail(c.file, c.line, "column %s type %s: %s", c.colName, c.sqlType, msg)
+			g.fail(c.file, c.line, "table %s column %s type %s: %s", tableName, c.colName, c.sqlType, msg)
 			return
 		}
 	}
 	want, ok := goTypeFor(c.sqlType, dialect)
 	if !ok {
-		g.fail(c.file, c.line, "column %s type %s cannot be generated yet", c.colName, c.sqlType)
+		g.fail(c.file, c.line, "table %s column %s type %s cannot be generated yet", tableName, c.colName, c.sqlType)
 		return
 	}
 	base, ptr, err := splitPtr(c.goType)
 	if err != nil {
-		g.fail(c.file, c.line, "column %s %s", c.colName, err.Error())
+		g.fail(c.file, c.line, "table %s column %s: %s", tableName, c.colName, err.Error())
 		return
 	}
 	_, pkCol := inPK[c.colName]
 	notNull := c.notNull || c.pk || c.identity || pkCol
 	if base != want {
-		g.fail(c.file, c.line, "column %s is %s; field type should be %s, got %s", c.colName, c.sqlType, want, base)
+		g.fail(c.file, c.line, "table %s column %s is %s; field type should be %s, got %s", tableName, c.colName, c.sqlType, want, base)
 		return
 	}
 	if notNull && ptr {
-		g.fail(c.file, c.line, "column %s is not null; field type should be %s, got %s", c.colName, want, c.goType)
+		g.fail(c.file, c.line, "table %s column %s is not null; field type should be %s, got %s", tableName, c.colName, want, c.goType)
 		return
 	}
 	if !notNull && !ptr {
-		g.fail(c.file, c.line, "column %s is nullable; field type should be *%s, got %s", c.colName, want, c.goType)
+		g.fail(c.file, c.line, "table %s column %s is nullable; field type should be *%s, got %s", tableName, c.colName, want, c.goType)
 	}
 }
 

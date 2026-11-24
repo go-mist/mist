@@ -2,7 +2,6 @@ package sqlite
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/go-mist/mist/query"
 	"github.com/go-mist/mist/sql"
@@ -77,7 +76,7 @@ func (c WithQuery[T]) Scan(row sql.Row, dst *T) error {
 	for i, col := range cols {
 		ptr := col.FieldPtr(dst)
 		if ptr == nil {
-			return fmt.Errorf("sqlite: cte column %s has no field pointer", col.ColName())
+			return query.MissingField(col)
 		}
 		dest[i] = ptr
 	}

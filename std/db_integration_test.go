@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/internal/schemafixture"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/op"
@@ -46,14 +47,14 @@ func TestStdCRUD(t *testing.T) {
 		t.Fatalf("rows = %#v", rows)
 	}
 
-	err = db.Tx(ctx, func(tx *std.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := pg.Insert(schemafixture.Users).
 			Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 			Values(int64(3), "cam").
 			Exec(ctx, tx); err != nil {
 			return err
 		}
-		err := tx.Tx(ctx, func(inner *std.Tx) error {
+		err := tx.Tx(ctx, func(inner mist.Tx) error {
 			_, err := pg.Insert(schemafixture.Users).
 				Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 				Values(int64(4), "dee").
@@ -137,7 +138,7 @@ func TestStdPreparedReuse(t *testing.T) {
 		t.Fatalf("alice %#v bob %#v", alice, bob)
 	}
 
-	err = db.Tx(ctx, func(tx *std.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		st, err := pg.Select(schemafixture.Users.Name).
 			From(schemafixture.Users).
 			Where(op.And(

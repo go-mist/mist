@@ -49,7 +49,7 @@ func TestMigrate(t *testing.T) {
 			wg.Add(1)
 			go func(conn *pg.DB) {
 				defer wg.Done()
-				n, err := migrate.Run(ctx, migrate.UsePG(conn), cfg)
+				n, err := migrate.Run(ctx, pg.Migrator(conn), cfg)
 				errs <- err
 				counts <- n
 			}(conn)
@@ -78,7 +78,7 @@ func TestMigrate(t *testing.T) {
 				t.Fatalf("%s rows = %d", table, n)
 			}
 		}
-		again, err := migrate.Run(ctx, migrate.UsePG(db), cfg)
+		again, err := migrate.Run(ctx, pg.Migrator(db), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -106,11 +106,11 @@ func TestMigrate(t *testing.T) {
 		writeMig(t, dir, "20240201000000_a", "create table m6_gap_a (id int);\n--> statement-breakpoint\ninsert into m6_gap_a (id) values (1);")
 		writeMig(t, dir, "20240203000000_c", "create table m6_gap_c (id int);\n--> statement-breakpoint\ninsert into m6_gap_c (id) values (1);")
 		cfg := migrate.Config{Folder: dir, Schema: schema}
-		if _, err := migrate.Run(ctx, migrate.UsePG(db), cfg); err != nil {
+		if _, err := migrate.Run(ctx, pg.Migrator(db), cfg); err != nil {
 			t.Fatal(err)
 		}
 		writeMig(t, dir, "20240202000000_b", "create table m6_gap_b (id int);\n--> statement-breakpoint\ninsert into m6_gap_b (id) values (1);")
-		n, err := migrate.Run(ctx, migrate.UsePG(db), cfg)
+		n, err := migrate.Run(ctx, pg.Migrator(db), cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,11 +136,11 @@ func TestMigrate(t *testing.T) {
 		name := "20240301000000_hash"
 		writeMig(t, dir, name, "create table m6_hash_t (id int);")
 		cfg := migrate.Config{Folder: dir, Schema: schema}
-		if _, err := migrate.Run(ctx, migrate.UsePG(db), cfg); err != nil {
+		if _, err := migrate.Run(ctx, pg.Migrator(db), cfg); err != nil {
 			t.Fatal(err)
 		}
 		writeMig(t, dir, name, "create table m6_hash_t (id int, name text);")
-		_, err := migrate.Run(ctx, migrate.UsePG(db), cfg)
+		_, err := migrate.Run(ctx, pg.Migrator(db), cfg)
 		hashErr, ok := err.(*migrate.HashError)
 		if !ok || hashErr.Name != name {
 			t.Fatalf("error = %v", err)
@@ -154,7 +154,7 @@ func TestMigrate(t *testing.T) {
 		dir := t.TempDir()
 		writeMig(t, dir, "20240401000000_ok", "create table m6_rb_ok (id int);")
 		writeMig(t, dir, "20240402000000_bad", "create table m6_rb_bad (id int);\n--> statement-breakpoint\nselect missing_m6_rb;\n")
-		_, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: dir, Schema: schema})
+		_, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: dir, Schema: schema})
 		if err == nil {
 			t.Fatal("expected statement error")
 		}
@@ -191,7 +191,7 @@ func TestMigrate(t *testing.T) {
 		}
 		dir := t.TempDir()
 		writeMig(t, dir, "20240501000000_old", "select 1;")
-		_, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: dir, Schema: schema})
+		_, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: dir, Schema: schema})
 		old, ok := err.(*migrate.OldTableError)
 		if !ok || old.Table != "__drizzle_migrations" {
 			t.Fatalf("error = %v", err)
@@ -247,6 +247,6 @@ func openMigDB(t *testing.T, ctx context.Context) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

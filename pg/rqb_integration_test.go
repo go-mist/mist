@@ -228,7 +228,7 @@ func openTracedDB(t *testing.T, ctx context.Context, tracer pgx.QueryTracer) *pg
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(traced.Close)
+	t.Cleanup(func() { _ = traced.Close() })
 	return traced
 }
 

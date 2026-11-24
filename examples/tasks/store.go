@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/migrate"
 	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/pg"
@@ -30,7 +31,7 @@ func openStore(ctx context.Context, dsn, migrations string) (*dbStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: migrations}); err != nil {
+	if _, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: migrations}); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -45,7 +46,7 @@ func (s *dbStore) Add(ctx context.Context, title string) (Task, error) {
 		return Task{}, errTitle
 	}
 	var created Task
-	err := s.db.Tx(ctx, func(tx *pg.Tx) error {
+	err := s.db.Tx(ctx, func(tx mist.Tx) error {
 		row, err := pg.Insert(Tasks).
 			Columns(Tasks.Title).
 			Values(title).
@@ -72,7 +73,7 @@ func (s *dbStore) List(ctx context.Context) ([]Task, error) {
 }
 
 func (s *dbStore) Done(ctx context.Context, id int64) error {
-	return s.db.Tx(ctx, func(tx *pg.Tx) error {
+	return s.db.Tx(ctx, func(tx mist.Tx) error {
 		_, err := pg.Select(Tasks.ID).
 			From(Tasks).
 			Where(op.Eq(Tasks.ID, id)).
@@ -97,7 +98,7 @@ func (s *dbStore) Done(ctx context.Context, id int64) error {
 }
 
 func (s *dbStore) Delete(ctx context.Context, id int64) error {
-	return s.db.Tx(ctx, func(tx *pg.Tx) error {
+	return s.db.Tx(ctx, func(tx mist.Tx) error {
 		_, err := pg.Delete(Events).
 			Where(op.Eq(Events.TaskID, id)).
 			Exec(ctx, tx)

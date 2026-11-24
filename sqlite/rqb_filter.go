@@ -97,13 +97,13 @@ func fieldFilter(table *relation.Table, alias string, f relation.Filter) (*sql.S
 	case "in":
 		vals, ok := f.Value.([]any)
 		if !ok {
-			return nil, fmt.Errorf("relation: column %q in requires []any", f.Column)
+			return nil, fmt.Errorf("relation: table %s column %s: in expected []any", table.Name, f.Column)
 		}
 		return op.InArray(ref, vals), nil
 	case "notIn":
 		vals, ok := f.Value.([]any)
 		if !ok {
-			return nil, fmt.Errorf("relation: column %q notIn requires []any", f.Column)
+			return nil, fmt.Errorf("relation: table %s column %s: notIn expected []any", table.Name, f.Column)
 		}
 		return op.NotInArray(ref, vals), nil
 	case "between":

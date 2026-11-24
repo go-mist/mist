@@ -109,7 +109,7 @@ func (s *Schema) fillObject(tab *Table, sel Selection, dest any, raw []byte) err
 
 func decodeColumn(table string, col Column, dest any, raw []byte) error {
 	if col.Ptr == nil {
-		return fmt.Errorf("relation: column %q.%q has no field pointer", table, col.Key)
+		return fmt.Errorf("relation: table %s column %s: expected a field pointer", table, col.Key)
 	}
 	dst := col.Ptr(dest)
 	if col.ReadJSON != nil {
@@ -126,7 +126,7 @@ func decodeColumn(table string, col Column, dest any, raw []byte) error {
 
 func decodeExtra(table string, ex SelectedExtra, dest any, raw []byte) error {
 	if ex.Ptr == nil {
-		return fmt.Errorf("relation: table %q extras %q has no field pointer", table, ex.Key)
+		return fmt.Errorf("relation: table %s extras %s: expected a field pointer", table, ex.Key)
 	}
 	dst := ex.Ptr(dest)
 	if ex.ReadJSON != nil {

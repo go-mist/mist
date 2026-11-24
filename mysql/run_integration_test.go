@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/internal/schemafixture"
 	"github.com/go-mist/mist/mysql"
 	"github.com/go-mist/mist/op"
@@ -169,7 +170,7 @@ func TestSQLRuns(t *testing.T) {
 		}
 	})
 	t.Run("for share of", func(t *testing.T) {
-		err := db.Tx(ctx, func(tx *mysql.Tx) error {
+		err := db.Tx(ctx, func(tx mist.Tx) error {
 			rows, err := mysql.Select(u.ID).From(u).ForShare(query.RowLock{Of: []sql.Chunk{u}, SkipLocked: true}).All(ctx, tx)
 			if err != nil {
 				return err
@@ -184,7 +185,7 @@ func TestSQLRuns(t *testing.T) {
 		}
 	})
 	t.Run("for update of", func(t *testing.T) {
-		err := db.Tx(ctx, func(tx *mysql.Tx) error {
+		err := db.Tx(ctx, func(tx mist.Tx) error {
 			rows, err := mysql.Select(u.ID).From(u).ForUpdate(query.RowLock{Of: []sql.Chunk{u}, SkipLocked: true}).All(ctx, tx)
 			if err != nil {
 				return err
@@ -536,7 +537,7 @@ func TestMatrixRuns(t *testing.T) {
 		}
 	})
 	t.Run("for update nowait", func(t *testing.T) {
-		err := db.Tx(ctx, func(tx *mysql.Tx) error {
+		err := db.Tx(ctx, func(tx mist.Tx) error {
 			rows, err := mysql.Select(u.ID).From(u).ForUpdate(query.RowLock{NoWait: true}).All(ctx, tx)
 			if err != nil {
 				return err

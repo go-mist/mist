@@ -101,7 +101,7 @@ func find[T any](ctx context.Context, db Queryer, schema *relation.Schema, table
 		}
 		for _, ex := range built.Selection.Extras {
 			if ex.Ptr == nil {
-				return nil, fmt.Errorf("relation: table %q extras %q has no field pointer", table, ex.Key)
+				return nil, fmt.Errorf("relation: table %s extras %s: expected a field pointer", table, ex.Key)
 			}
 			dest = append(dest, ex.Ptr(row))
 		}

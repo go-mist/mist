@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/introspect"
 	"github.com/go-mist/mist/migrate"
 	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPushDropWaitsForForce(t *testing.T) {
@@ -74,7 +75,7 @@ func TestMediumSchemaRoundTrip(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = db.Exec(context.Background(), "drop schema if exists "+pg.Dialect{}.EscapeName(mig)+" cascade")
 	})
-	applied, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{Folder: folder, Schema: mig})
+	applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: folder, Schema: mig})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func mustSQL(t *testing.T, changes []diff.Change) string {
 }
 
 func applyInSchema(ctx context.Context, db *pg.DB, name, sqlText string) error {
-	return db.Tx(ctx, func(tx *pg.Tx) error {
+	return db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := tx.Exec(ctx, "set local search_path to "+pg.Dialect{}.EscapeName(name)); err != nil {
 			return err
 		}
@@ -197,7 +198,7 @@ func openSchemaDB(t *testing.T, ctx context.Context, name string) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

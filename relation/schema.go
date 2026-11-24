@@ -312,7 +312,7 @@ func (t *Table) Pointer(key string, row any) (any, error) {
 		return nil, UnknownColumn(t.Name, key)
 	}
 	if c.Ptr == nil {
-		return nil, fmt.Errorf("relation: column %q.%q has no field pointer", t.Name, key)
+		return nil, fmt.Errorf("relation: table %s column %s: expected a field pointer", t.Name, key)
 	}
 	return c.Ptr(row), nil
 }

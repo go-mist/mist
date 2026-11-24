@@ -10,13 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/internal/schemafixture"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
 	"github.com/go-mist/mist/sql"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestDBCRUD(t *testing.T) {
@@ -88,14 +89,14 @@ func TestDBTransaction(t *testing.T) {
 	db := openTestDB(t, ctx)
 	resetUsers(t, ctx, db)
 
-	err := db.Tx(ctx, func(tx *pg.Tx) error {
+	err := db.Tx(ctx, func(tx mist.Tx) error {
 		if _, err := pg.Insert(schemafixture.Users).
 			Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 			Values(int64(1), "ann").
 			Exec(ctx, tx); err != nil {
 			return err
 		}
-		err := tx.Tx(ctx, func(inner *pg.Tx) error {
+		err := tx.Tx(ctx, func(inner mist.Tx) error {
 			_, err := pg.Insert(schemafixture.Users).
 				Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 				Values(int64(2), "bob").
@@ -126,7 +127,7 @@ func TestDBTransaction(t *testing.T) {
 		t.Fatalf("kept = %#v", kept)
 	}
 
-	err = db.Tx(ctx, func(tx *pg.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		_, err := pg.Insert(schemafixture.Users).
 			Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 			Values(int64(3), "nope").
@@ -159,7 +160,7 @@ func TestDBPanicRollsBack(t *testing.T) {
 			t.Fatalf("panic did not roll back: %v", err)
 		}
 	}()
-	_ = db.Tx(ctx, func(tx *pg.Tx) error {
+	_ = db.Tx(ctx, func(tx mist.Tx) error {
 		_, err := pg.Insert(schemafixture.Users).
 			Columns(schemafixture.Users.ID, schemafixture.Users.Name).
 			Values(int64(9), "boom").
@@ -287,7 +288,7 @@ func TestPreparedReuse(t *testing.T) {
 		t.Fatalf("name = %s", cara.Name)
 	}
 
-	err = db.Tx(ctx, func(tx *pg.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		st, err := pg.Select(schemafixture.Users.Name).
 			From(schemafixture.Users).
 			Where(op.And(
@@ -340,7 +341,7 @@ func openTestDB(t *testing.T, ctx context.Context) *pg.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(db.Close)
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

@@ -102,7 +102,7 @@ func rebuildTable(name string, changes []diff.Change, want schema.Schema) ([]str
 		}
 		if add, ok := added[col.Name]; ok {
 			if add.NotNull && add.Default == "" {
-				return nil, fmt.Errorf("sqlite: table %s added not-null column %s has no default, so existing rows cannot be filled", name, col.Name)
+				return nil, fmt.Errorf("sqlite: table %s column %s is not null; expected a default, has no default, so existing rows cannot be filled", name, col.Name)
 			}
 			continue
 		}

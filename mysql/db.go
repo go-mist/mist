@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/logger"
 	"github.com/go-mist/mist/query"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 // DB is a database/sql connection pool. The dialect is MySQL.
@@ -102,7 +103,7 @@ func (db *DB) Prepare(ctx context.Context, sqlText string) (query.Stmt, error) {
 }
 
 // Tx opens a transaction. It rolls back when fn returns an error or panics, and commits otherwise.
-func (db *DB) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (db *DB) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if db.sqldb == nil {
 		return errors.New("mysql: no connection pool")
 	}
@@ -151,7 +152,7 @@ func (t *Tx) Prepare(ctx context.Context, sqlText string) (query.Stmt, error) {
 }
 
 // Tx opens a savepoint inside the current transaction.
-func (t *Tx) Tx(ctx context.Context, fn func(*Tx) error) error {
+func (t *Tx) Tx(ctx context.Context, fn func(mist.Tx) error) error {
 	if t.tx == nil {
 		return errors.New("mysql: no transaction")
 	}

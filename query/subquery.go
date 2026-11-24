@@ -61,7 +61,7 @@ func (q Subquery[T]) Scan(row sql.Row, dst *T) error {
 	for i, col := range q.cols {
 		ptr := col.FieldPtr(dst)
 		if ptr == nil {
-			return fmt.Errorf("query: subquery column %s has no field pointer", col.ColName())
+			return MissingField(col)
 		}
 		dest[i] = ptr
 	}

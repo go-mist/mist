@@ -1,6 +1,6 @@
 # mist
 
-SQL query builder for Go. PostgreSQL, MySQL, and SQLite. SQLite is compiled into the binary, so `CGO_ENABLED=0` is enough.
+SQL query builder for Go. PostgreSQL, MySQL, and SQLite. Oracle runs select, insert, update, and delete. SQLite is compiled into the binary, so `CGO_ENABLED=0` is enough.
 
 ## Install
 
@@ -46,7 +46,7 @@ if err != nil {
 defer db.Close()
 ```
 
-MySQL takes a [go-sql-driver](https://github.com/go-sql-driver/mysql) DSN, such as `user:pass@tcp(127.0.0.1:3306)/app`. SQLite takes a file path or `:memory:`.
+MySQL takes a [go-sql-driver](https://github.com/go-sql-driver/mysql) DSN, such as `user:pass@tcp(127.0.0.1:3306)/app`. SQLite takes a file path or `:memory:`. Oracle takes a [go-ora](https://github.com/sijms/go-ora) URL, such as `oracle://user:pass@host:1521/service`. `pg.Open`, `mysql.Open`, `sqlite.Open`, and `oracle.Open` each return their own pool, and that pool implements `mist.DB`.
 
 ```go
 db, err := mysql.Open(ctx, dsn)
@@ -117,7 +117,11 @@ err := db.Tx(ctx, func(tx *pg.Tx) error {
 
 ## Migrate
 
-Generate the next migration from the schema package, then apply the folder. Both commands are PostgreSQL. The migration table is `drizzle.__drizzle_migrations`. Each migration is a directory. `snapshot.json` is the schema after that migration. A later `ddl -write` adds a new directory and leaves the old one unchanged.
+`mist ddl`, `mist check`, and `mist push` are PostgreSQL. `migrate.Run` applies a folder on PostgreSQL, MySQL, and SQLite.
+
+PostgreSQL stores `drizzle.__drizzle_migrations` and takes `pg_advisory_xact_lock` inside the transaction. MySQL creates a database of that name and the same table, and holds `GET_LOCK` until the call returns. MySQL DDL commits the current transaction, so a failed migration can leave earlier statements applied. SQLite keeps `__drizzle_migrations` in the main database, rejects a schema name, and rolls the batch back with the transaction.
+
+Each migration is a directory. `snapshot.json` is the schema after that migration. A later `ddl -write` adds a new directory and leaves the old one unchanged. Two latest directories that change different columns, indexes, or constraints are both parents of the next migration. A shared object stops `ddl`, `check`, and `migrate`.
 
 ```
 migrations/20261123135846_init/migration.sql
@@ -127,15 +131,19 @@ migrations/20261123135846_init/snapshot.json
 ```
 mist ddl -dir . -migrations migrations -write -name init
 mist migrate -migrations migrations
+mist migrate -driver mysql -migrations migrations
+mist migrate -driver sqlite -dsn app.db -migrations migrations
 ```
 
-`DATABASE_URL` can be passed as `-dsn`, or set `DRIZZLE_PG_DSN`. From Go:
+`-dsn` overrides the environment. PostgreSQL reads `DRIZZLE_PG_DSN`. MySQL reads `DRIZZLE_MYSQL_DSN`. From Go:
 
 ```go
-applied, err := migrate.Run(ctx, migrate.UsePG(db), migrate.Config{
+applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{
 	Folder: "migrations",
 })
 ```
+
+`mysql.Migrator` and `sqlite.Migrator` are the other two connections. Oracle does not apply migrations yet.
 
 `mist check` compares the folder with the snapshot. `mist push` prints the SQL that would change the database, and applies it with `--force`.
 

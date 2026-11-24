@@ -3,7 +3,7 @@
 本文档是 mist 的实施计划。**Why / Features 见 [README.md](./README.md)。**
 
 - 参考基准：**drizzle-orm v1.0.0-rc.5**（793 个 `.ts` 文件，约 109,555 行）
-- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。DDL、迁移、introspect、`push` 仍只做 PostgreSQL。
+- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`migrate.Run` 能在 PostgreSQL、MySQL 和 SQLite 上应用目录。MySQL 的 DDL 会提交当前事务，锁用连接上的 `GET_LOCK`。SQLite 没有 schema，迁移表在当前库。`ddl`、introspect、`push` 仍只做 PostgreSQL。Oracle 能打开连接并执行 select、insert、update、delete；join、distinct、on conflict、returning 会报错。Oracle 的迁移和关系查询还没有。
 - 排期单位：**人周**，按单人全职粗估，只用于判断量级，不是承诺
 
 ---
@@ -460,7 +460,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-23） · **粗估**：8 – 12 周（最重） · **依赖**：M1、M6
 
-`mist ddl -migrations -write` 在新目录里写下一次 `migration.sql` 和 `snapshot.json`。旧目录不改。`mist migrate` 应用目录。`mist check` 对照快照和每个 `migration.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
+`mist ddl -migrations -write` 在新目录里写下一次 `migration.sql` 和 `snapshot.json`。旧目录不改。两份最新快照如果改的不是同一个列、索引或约束，下一次的 `prevIds` 带上这两份，SQL 只含新的差异；改的是同一个对象时，`ddl`、`check` 和 `migrate` 都停。`mist migrate` 应用目录。`mist check` 对照快照和每个 `migration.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
 
 #### 目标
 
@@ -598,7 +598,7 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 | 示例项目 | `examples/tasks`：标准库 CLI 和 HTTP，覆盖生成、迁移、增删改查和事务 | 已完成 |
 | 文档站 | pkg.go.dev 之外的教程、迁移指南（从 gorm / sqlc 过来） | 未开工 |
 | 发布流程 | tag、changelog、语义化版本 | 未开工 |
-| 错误信息 | 所有用户可见错误都必须包含「是哪张表、哪一列、期望什么」 | 未开工 |
+| 错误信息 | 生成、编码、扫描、关系过滤里能定位到列的错误写明表、列和期望。连接和迁移目录这类错误不编造表名 | 进行中 |
 
 ---
 
@@ -850,3 +850,6 @@ M2 ──> M8 ──> M9
 | 2026-11-23 | 查询日志。`logger.Default` 的行格式与 drizzle-orm 的 `DefaultLogger` 相同。不传 logger 时不写。pg、std、mysql、sqlite 的查询、执行和预处理语句都会记 |
 | 2026-11-23 | M10 开始。`testutil.Run` 按目录对拍 golden。集成测试用 testcontainers 起 PostgreSQL 和 MySQL，SQLite 仍是临时文件。`bench/` 对比 sqlx、gorm、ent、bun，Actions 保存基准输出 |
 | 2026-11-23 | `examples/tasks`：标准库 CLI 和 HTTP。生成表、PostgreSQL 迁移、增删改查、事务。不引入别的依赖 |
+| 2026-11-23 | 列上的错误写明表、列和期望。生成器、codec、扫描和关系过滤走这个格式。连接失败和迁移目录错误没有表可写 |
+| 2026-11-23 | 两条分支各写一份迁移时，按列、索引、约束做三方合并。合得上就在下一次快照里记下两个 parent；合不上，`ddl`、`check`、`migrate` 停住并写明目录和对象。旧目录不改 |
+| 2026-11-24 | `pg.DB`、`mysql.DB`、`sqlite.DB`、`std.DB` 都实现 `mist.DB`。应用在 `Open` 处选择驱动。`migrate.Run` 增加 MySQL 和 SQLite。Oracle 包能渲染并执行增删改查 |

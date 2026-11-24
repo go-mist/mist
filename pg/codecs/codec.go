@@ -40,10 +40,17 @@ func (Base) NormalizeParam(value any, _ int) (any, error) { return value, nil }
 
 // Bound binds a codec to one column. Error text includes the column name and the expected type.
 type Bound struct {
+	Table   string
 	Column  string
 	SQLType string
 	Dims    int
 	Inner   Codec
+}
+
+// At sets the table name used in conversion errors.
+func (b Bound) At(table string) Bound {
+	b.Table = table
+	return b
 }
 
 // Bind binds a codec to a column name. A dimensions value of 0 means a scalar.
@@ -77,7 +84,7 @@ func (b Bound) NormalizeParam(value any, dims int) (any, error) {
 	value = deref(value)
 	got, err := b.Inner.NormalizeParam(value, dims)
 	if err != nil {
-		return nil, fmt.Errorf("pg: column %s expected %s, %w", b.Column, b.SQLType, err)
+		return nil, b.fail(err)
 	}
 	return got, nil
 }
@@ -95,6 +102,13 @@ var (
 	_ sql.Encoder    = Bound{}
 	_ sql.ParamCodec = Bound{}
 )
+
+func (b Bound) fail(err error) error {
+	if b.Table == "" {
+		return fmt.Errorf("pg: column %s expected %s, %w", b.Column, b.SQLType, err)
+	}
+	return fmt.Errorf("pg: table %s column %s expected %s, %w", b.Table, b.Column, b.SQLType, err)
+}
 
 func castType(placeholder, base string, dims int) string {
 	if base == "" {

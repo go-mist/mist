@@ -56,7 +56,7 @@ func needsJSON(tables []table) bool {
 func needsCodecs(tables []table) bool {
 	for _, t := range tables {
 		for _, c := range t.cols {
-			if codecGo(c, t.dialect) != "" {
+			if codecExpr(c, t.dialect) != "" {
 				return true
 			}
 		}
@@ -117,7 +117,7 @@ func writeTable(b *strings.Builder, t table) {
 	for _, c := range t.cols {
 		fmt.Fprintf(b, "\t%s: %s.Col[%s, %s]{\n\t\tTable: %q,\n\t\tName: %q,\n\t\tPtr: func(v *%s) any { return &v.%s },\n",
 			c.field, q, t.typeName, c.goType, t.sqlName, c.colName, t.typeName, c.path)
-		if expr := codecGo(c, t.dialect); expr != "" {
+		if expr := codecGo(c, t.dialect, t.sqlName); expr != "" {
 			fmt.Fprintf(b, "\t\tCodec: %s,\n", expr)
 		}
 		b.WriteString("\t},\n")
@@ -125,7 +125,15 @@ func writeTable(b *strings.Builder, t table) {
 	b.WriteString("}\n")
 }
 
-func codecGo(c column, dialect string) string {
+func codecGo(c column, dialect, table string) string {
+	expr := codecExpr(c, dialect)
+	if expr == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s.At(%q)", expr, table)
+}
+
+func codecExpr(c column, dialect string) string {
 	if dialect == "mysql" {
 		switch c.sqlType {
 		case "numeric", "decimal":

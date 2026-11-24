@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/logger"
 	"github.com/go-mist/mist/sqlite"
 )
@@ -54,7 +55,7 @@ func TestQueryLog(t *testing.T) {
 	if err := stmt.Close(); err != nil {
 		t.Fatal(err)
 	}
-	err = db.Tx(ctx, func(tx *sqlite.Tx) error {
+	err = db.Tx(ctx, func(tx mist.Tx) error {
 		_, err := tx.Exec(ctx, `insert into notes (id, name) values (?, ?)`, int64(2), "bea")
 		return err
 	})
