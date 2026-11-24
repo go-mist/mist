@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/dialect/mysql"
 )
 
 //go:generate go run github.com/go-mist/mist/cmd/mist generate

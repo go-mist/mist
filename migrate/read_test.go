@@ -3,6 +3,7 @@ package migrate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -40,6 +41,26 @@ func TestReadSplitsAndSorts(t *testing.T) {
 	}
 	if got[0].Hash == got[1].Hash || len(got[0].Hash) != 64 {
 		t.Fatalf("hash = %s", got[0].Hash)
+	}
+}
+
+func TestReadNamesTheDirectory(t *testing.T) {
+	_, err := Read(filepath.Join(t.TempDir(), "missing"))
+	if err == nil || !strings.Contains(err.Error(), "migrate: read directory") {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	name := "20240101000000_init"
+	if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, name, "migration.sql")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Read(dir)
+	if err == nil || !strings.Contains(err.Error(), "migrate: read "+path) {
+		t.Fatal(err)
 	}
 }
 

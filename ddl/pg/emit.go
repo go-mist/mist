@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/diff"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
 )
 

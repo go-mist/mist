@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/introspect"
 	"github.com/go-mist/mist/migrate"
-	"github.com/go-mist/mist/pg"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRevisionsApply(t *testing.T) {

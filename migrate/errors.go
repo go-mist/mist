@@ -19,7 +19,11 @@ type OldTableError struct {
 }
 
 func (e *OldTableError) Error() string {
-	return fmt.Sprintf("migrate: migration table %q.%q has no name column; that is a v0 layout. This library does not run upToV1. Run drizzle-kit up, or add name and applied_at yourself", e.Schema, e.Table)
+	where := e.Table
+	if e.Schema != "" {
+		where = e.Schema + "." + e.Table
+	}
+	return fmt.Sprintf("migrate: migration table %q has no name column; that is a v0 layout. This library does not run upToV1. Run drizzle-kit up, or add name and applied_at yourself", where)
 }
 
 // JournalError means the directory is still an old drizzle-kit journal.

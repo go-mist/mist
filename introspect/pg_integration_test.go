@@ -12,9 +12,9 @@ import (
 	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/codegen"
 	ddlpg "github.com/go-mist/mist/ddl/pg"
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/internal/testdb"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

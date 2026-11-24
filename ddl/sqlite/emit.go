@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	mistsqlite "github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/schema"
-	mistsqlite "github.com/go-mist/mist/sqlite"
 )
 
 // breakpoint matches migrate's split marker verbatim.
@@ -197,7 +197,7 @@ func columnSQL(col schema.Column, primary bool) string {
 	if col.Generated != "" {
 		sql += " GENERATED ALWAYS AS (" + col.Generated + ") STORED"
 	}
-	if col.NotNull && !primary {
+	if col.NotNull {
 		sql += " NOT NULL"
 	}
 	if col.Default != "" && col.Generated == "" {

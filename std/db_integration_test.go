@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/go-mist/mist"
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/internal/schemafixture"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/op"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
 	"github.com/go-mist/mist/sql"
 	"github.com/go-mist/mist/std"

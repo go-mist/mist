@@ -1,8 +1,8 @@
 package bench
 
 import (
+	"github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/sql"
-	"github.com/go-mist/mist/sqlite"
 )
 
 // User is the row every library reads. The table is users(id, name, age).

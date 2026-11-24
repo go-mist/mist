@@ -3,7 +3,7 @@ package schemafixture
 import (
 	"time"
 
-	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/dialect/pg"
 )
 
 //go:generate go run github.com/go-mist/mist/cmd/mist generate

@@ -71,6 +71,10 @@ type SelectSpec struct {
 	LimitSet  bool
 	Offset    int
 	OffsetSet bool
+	// Top is SQL Server SELECT TOP. TopSet false means Top was not written.
+	// It is not Limit and it is not OFFSET / FETCH.
+	Top    int
+	TopSet bool
 	// Sets are in call order. Ordering and limit / offset written after a set operation
 	// are recorded on that operation and rendered after the whole result.
 	Sets   []SetOp
@@ -130,6 +134,7 @@ const (
 	clauseWith
 	clauseDistinct
 	clauseLock
+	clauseTop
 	clauseCount
 )
 
@@ -166,8 +171,10 @@ type Select[T any] struct {
 	distinctOn []sql.Chunk
 	limit      int
 	offset     int
+	top        int
 	limitSet   bool
 	offsetSet  bool
+	topSet     bool
 	distinct   bool
 	tail       *clause
 }
@@ -327,6 +334,18 @@ func (s Select[T]) forLock(share bool, locks ...RowLock) Select[T] {
 	return s
 }
 
+// Top sets SQL Server SELECT TOP. Top(0) renders as TOP (0). A later call replaces the previous one.
+// This is not Limit. PostgreSQL, MySQL, SQLite, and Oracle reject it.
+func (s Select[T]) Top(n int) Select[T] {
+	if s.tail != nil {
+		s.tail = &clause{prev: s.tail, kind: clauseTop, n: n}
+		return s
+	}
+	s.top = n
+	s.topSet = true
+	return s
+}
+
 // Limit sets the limit. Limit(0) renders as LIMIT 0.
 func (s Select[T]) Limit(n int) Select[T] {
 	if s.tail != nil {
@@ -461,6 +480,9 @@ func (s Select[T]) seal() Select[T] {
 	if s.distinct || len(s.distinctOn) > 0 {
 		tail = &clause{prev: tail, kind: clauseDistinct, chunks: s.distinctOn}
 	}
+	if s.topSet {
+		tail = &clause{prev: tail, kind: clauseTop, n: s.top}
+	}
 	if s.limitSet {
 		tail = &clause{prev: tail, kind: clauseLimit, n: s.limit}
 	}
@@ -472,6 +494,7 @@ func (s Select[T]) seal() Select[T] {
 	s.order = nil
 	s.distinctOn = nil
 	s.distinct = false
+	s.topSet = false
 	s.limitSet = false
 	s.offsetSet = false
 	return s
@@ -493,6 +516,8 @@ func (s Select[T]) Spec() SelectSpec {
 			LimitSet:   s.limitSet,
 			Offset:     s.offset,
 			OffsetSet:  s.offsetSet,
+			Top:        s.top,
+			TopSet:     s.topSet,
 			Distinct:   s.distinct,
 			DistinctOn: s.distinctOn,
 		}
@@ -530,6 +555,10 @@ func foldSelect(from sql.Chunk, cols []sql.Chunk, tail *clause) SelectSpec {
 			case clauseOffset:
 				last.Offset = n.n
 				last.OffsetSet = true
+			case clauseTop:
+				if spec.SetErr == "" {
+					spec.SetErr = "query: top cannot follow a set operation"
+				}
 			default:
 				if spec.SetErr == "" {
 					spec.SetErr = "query: where, group by, having, join, distinct, or for update cannot follow a set operation"
@@ -554,6 +583,9 @@ func foldSelect(from sql.Chunk, cols []sql.Chunk, tail *clause) SelectSpec {
 		case clauseOffset:
 			spec.Offset = n.n
 			spec.OffsetSet = true
+		case clauseTop:
+			spec.Top = n.n
+			spec.TopSet = true
 		case clauseDistinct:
 			spec.Distinct = true
 			spec.DistinctOn = n.chunks
@@ -606,6 +638,9 @@ func buildSpec(from sql.Chunk, cols []sql.Chunk, tail *clause) SelectSpec {
 		case clauseOffset:
 			spec.Offset = n.n
 			spec.OffsetSet = true
+		case clauseTop:
+			spec.Top = n.n
+			spec.TopSet = true
 		}
 	}
 	for i, j := 0, len(joins)-1; i < j; i, j = i+1, j-1 {

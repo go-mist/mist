@@ -119,7 +119,7 @@ func TestGenerateRejects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			src := "package schema\n\nimport \"github.com/go-mist/mist/pg\"\n\n" + tt.body
+			src := "package schema\n\nimport \"github.com/go-mist/mist/dialect/pg\"\n\n" + tt.body
 			if err := os.WriteFile(filepath.Join(dir, "schema.go"), []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -140,7 +140,7 @@ func TestGenerateConstraintsAndTypes(t *testing.T) {
 import (
 	"encoding/json"
 
-	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/dialect/pg"
 )
 
 type Member struct {
@@ -197,7 +197,7 @@ func (Member) Table() pg.TableMeta {
 }
 
 func TestGenerateColumnModifiers(t *testing.T) {
-	body := "package schema\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
+	body := "package schema\n\nimport \"github.com/go-mist/mist/dialect/pg\"\n\n" +
 		"type Item struct {\n" +
 		"\tID int64 `mist:\"id,bigint,notnull,identity\"`\n" +
 		"\tCode string `mist:\"code,varchar,notnull,length=8,unique=items_code_idx\"`\n" +
@@ -230,7 +230,7 @@ func TestGenerateColumnModifiers(t *testing.T) {
 }
 
 func TestGenerateEmbedsSamePackage(t *testing.T) {
-	body := "package schema\n\nimport \"time\"\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
+	body := "package schema\n\nimport \"time\"\n\nimport \"github.com/go-mist/mist/dialect/pg\"\n\n" +
 		"type timestamps struct {\n" +
 		"\tCreatedAt time.Time `mist:\"created_at,timestamptz,notnull,defaultnow\"`\n" +
 		"}\n\n" +
@@ -272,7 +272,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/go-mist/mist/mysql"
+	"github.com/go-mist/mist/dialect/mysql"
 )
 
 type Note struct {
@@ -299,8 +299,8 @@ func (Note) Table() mysql.TableMeta {
 	}
 	text := string(got)
 	for _, want := range []string{
-		"github.com/go-mist/mist/mysql\"",
-		"github.com/go-mist/mist/mysql/codecs\"",
+		"github.com/go-mist/mist/dialect/mysql\"",
+		"github.com/go-mist/mist/dialect/mysql/codecs\"",
 		"mysql.Col[Note, json.RawMessage]",
 		`codecs.JSON.Bind("body")`,
 		`codecs.Decimal.Bind("amount")`,
@@ -342,7 +342,7 @@ func TestGenerateMySQLRejects(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			src := "package schema\n\nimport (\n\t\"time\"\n\n\t\"github.com/go-mist/mist/mysql\"\n)\n\n" + tt.body
+			src := "package schema\n\nimport (\n\t\"time\"\n\n\t\"github.com/go-mist/mist/dialect/mysql\"\n)\n\n" + tt.body
 			if err := os.WriteFile(filepath.Join(dir, "schema.go"), []byte(src), 0o644); err != nil {
 				t.Fatal(err)
 			}

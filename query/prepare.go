@@ -122,6 +122,8 @@ func (p *PreparedSelect[T]) One(ctx context.Context, values map[string]any) (T, 
 type PreparedInsert[T any] struct {
 	statement
 	returning []Column[T]
+	output    []Column[T]
+	outputSet bool
 }
 
 // Prepare renders this insert and registers the statement with the driver.
@@ -135,25 +137,42 @@ func (ins Insert[T]) Prepare(ctx context.Context, db Executor) (*PreparedInsert[
 	return &PreparedInsert[T]{
 		statement: st,
 		returning: append([]Column[T](nil), ins.returning...),
+		output:    append([]Column[T](nil), ins.output...),
+		outputSet: ins.outputSet,
 	}, nil
 }
 
-// Exec fills placeholders from values and executes. When Returning is set, use All or One instead.
+// Exec fills placeholders from values and executes. When Returning or Output is set, use All or One instead.
 func (p *PreparedInsert[T]) Exec(ctx context.Context, values map[string]any) (int64, error) {
+	if p.outputSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	return execPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// All executes an insert with RETURNING.
+// All executes an insert with RETURNING or OUTPUT.
 func (p *PreparedInsert[T]) All(ctx context.Context, values map[string]any) ([]T, error) {
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return allPrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return nil, errors.New("query: insert has no returning")
 	}
 	return allPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// One executes an insert with RETURNING and requires exactly one row.
+// One executes an insert with RETURNING or OUTPUT and requires exactly one row.
 func (p *PreparedInsert[T]) One(ctx context.Context, values map[string]any) (T, error) {
 	var zero T
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return zero, errors.New("query: output is missing columns")
+		}
+		return onePrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return zero, errors.New("query: insert has no returning")
 	}
@@ -164,6 +183,8 @@ func (p *PreparedInsert[T]) One(ctx context.Context, values map[string]any) (T, 
 type PreparedUpdate[T any] struct {
 	statement
 	returning []Column[T]
+	output    []Column[T]
+	outputSet bool
 }
 
 // Prepare renders this update and registers the statement with the driver.
@@ -174,28 +195,47 @@ func (u Update[T]) Prepare(ctx context.Context, db Executor) (*PreparedUpdate[T]
 	if err != nil {
 		return nil, err
 	}
+	out := append([]Column[T](nil), u.outputInserted...)
+	out = append(out, u.outputDeleted...)
 	return &PreparedUpdate[T]{
 		statement: st,
 		returning: append([]Column[T](nil), u.returning...),
+		output:    out,
+		outputSet: u.outputInsertedSet || u.outputDeletedSet,
 	}, nil
 }
 
-// Exec fills placeholders from values and executes. When Returning is set, use All or One instead.
+// Exec fills placeholders from values and executes. When Returning or Output is set, use All or One instead.
 func (p *PreparedUpdate[T]) Exec(ctx context.Context, values map[string]any) (int64, error) {
+	if p.outputSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	return execPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// All executes an update with RETURNING.
+// All executes an update with RETURNING or OUTPUT.
 func (p *PreparedUpdate[T]) All(ctx context.Context, values map[string]any) ([]T, error) {
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return allPrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return nil, errors.New("query: update has no returning")
 	}
 	return allPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// One executes an update with RETURNING and requires exactly one row.
+// One executes an update with RETURNING or OUTPUT and requires exactly one row.
 func (p *PreparedUpdate[T]) One(ctx context.Context, values map[string]any) (T, error) {
 	var zero T
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return zero, errors.New("query: output is missing columns")
+		}
+		return onePrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return zero, errors.New("query: update has no returning")
 	}
@@ -206,6 +246,8 @@ func (p *PreparedUpdate[T]) One(ctx context.Context, values map[string]any) (T, 
 type PreparedDelete[T any] struct {
 	statement
 	returning []Column[T]
+	output    []Column[T]
+	outputSet bool
 }
 
 // Prepare renders this delete and registers the statement with the driver.
@@ -219,25 +261,42 @@ func (d Delete[T]) Prepare(ctx context.Context, db Executor) (*PreparedDelete[T]
 	return &PreparedDelete[T]{
 		statement: st,
 		returning: append([]Column[T](nil), d.returning...),
+		output:    append([]Column[T](nil), d.output...),
+		outputSet: d.outputSet,
 	}, nil
 }
 
-// Exec fills placeholders from values and executes. When Returning is set, use All or One instead.
+// Exec fills placeholders from values and executes. When Returning or Output is set, use All or One instead.
 func (p *PreparedDelete[T]) Exec(ctx context.Context, values map[string]any) (int64, error) {
+	if p.outputSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	return execPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// All executes a delete with RETURNING.
+// All executes a delete with RETURNING or OUTPUT.
 func (p *PreparedDelete[T]) All(ctx context.Context, values map[string]any) ([]T, error) {
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return allPrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return nil, errors.New("query: delete has no returning")
 	}
 	return allPrepared(ctx, &p.statement, p.returning, values)
 }
 
-// One executes a delete with RETURNING and requires exactly one row.
+// One executes a delete with RETURNING or OUTPUT and requires exactly one row.
 func (p *PreparedDelete[T]) One(ctx context.Context, values map[string]any) (T, error) {
 	var zero T
+	if p.outputSet {
+		if len(p.output) == 0 {
+			return zero, errors.New("query: output is missing columns")
+		}
+		return onePrepared(ctx, &p.statement, p.output, values)
+	}
 	if len(p.returning) == 0 {
 		return zero, errors.New("query: delete has no returning")
 	}

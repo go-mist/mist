@@ -3,7 +3,7 @@
 本文档是 mist 的实施计划。**Why / Features 见 [README.md](./README.md)。**
 
 - 参考基准：**drizzle-orm v1.0.0-rc.5**（793 个 `.ts` 文件，约 109,555 行）
-- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`migrate.Run` 能在 PostgreSQL、MySQL 和 SQLite 上应用目录。MySQL 的 DDL 会提交当前事务，锁用连接上的 `GET_LOCK`。SQLite 没有 schema，迁移表在当前库。`ddl`、introspect、`push` 仍只做 PostgreSQL。Oracle 能打开连接并执行 select、insert、update、delete；join、distinct、on conflict、returning 会报错。Oracle 的迁移和关系查询还没有。
+- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。同一套 `mysql` 包也覆盖 MariaDB。同一套 `pg` 包也覆盖瀚高：占位符、引号、`returning`、`on conflict`、`lateral` 都按 PostgreSQL。连接用 `pg.Open`，默认端口 `5866`。pgx 不支持 SM3 认证。这条还没有在瀚高上跑过。`mssql` 包覆盖 SQL Server：方括号、`@p1`、`TOP`、`OUTPUT`、`OFFSET` / `FETCH`、`OUTER APPLY` 加 `FOR JSON`。`returning` 不写成 `OUTPUT`，`on conflict`、`for update` 报错。迁移表默认在 `dbo`，锁是事务里的 `sp_getapplock`。`FindMany` 的 `lateral` 在当前 MariaDB 上会被拒绝。反读时 JSON 列是 `longtext` 加 `json_valid` 检查，diff 不会空。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`migrate.Run` 能在 PostgreSQL、MySQL 和 SQLite 上应用目录。MySQL 的 DDL 会提交当前事务，锁用连接上的 `GET_LOCK`。SQLite 没有 schema，迁移表在当前库。`ddl`、introspect、`push` 覆盖 PostgreSQL、MySQL、SQLite 和 Oracle。`migrate.Run` 也能在 Oracle 上应用目录：迁移表在当前用户下，DDL 不包进事务。Oracle 已执行 join、`group by`、`having`、`distinct`、`with`、`union`、`except`、`for update`、`insert select`，以及 `FindMany` 的 `many`。`returning` 和 `on conflict` 仍报错，不改写成别的语句。`distinct on` 和 `for share` 同样报错。连接失败写成 `pg: connect`、`mysql: connect`、`sqlite: connect`、`oracle: connect`、`dm: connect` 或 `std: connect`，不把连接串写进错误。迁移目录读失败写明目录或文件路径。`dm` 包覆盖达梦：双引号、`?`、`LIMIT` / `OFFSET`，递归 CTE 仍写成 `WITH`，`RECURSIVE` 关键字会被服务器拒绝。驱动是纯 Go 的 `gitee.com/chunanyong/dm`，这个模块没有声明许可证。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。空 schema 表示当前用户，迁移的 DDL 不包进事务。`FindMany` 还没有。查询已在 Kiri 的 DM8 上跑过。迁移、`ddl` 和 `push` 还没有在真库上跑。
 - 排期单位：**人周**，按单人全职粗估，只用于判断量级，不是承诺
 
 ---
@@ -107,7 +107,7 @@
 | `sql/sql.go` | `SQL` 结构体（持有 `[]Chunk`）、`S(...)`、`Raw`、`Empty`、`Join`、`Identifier`、`NewParam`、`NewPlaceholder`、`NewSubquery`、`ListOf` |
 | `sql/condition.go` | `And` / `Or` / `Not`（对应 rc.5 `sql/expressions/conditions.ts` 里不依赖列类型的三个组合子） |
 | `sql/dialect/` | `Dialect` 接口：`EscapeName` / `EscapeParam` / `EscapeString` |
-| `pg/dialect.go` | pg 的三个转义函数 + `SQLToQuery` / `SQLToQueryInline` |
+| `dialect/pg/dialect.go` | pg 的三个转义函数 + `SQLToQuery` / `SQLToQueryInline` |
 | `internal/testutil` | golden fixture 加载与逐字节比对 |
 | `sql/bench_test.go` | 渲染基准（bind / inline / nested 三组） |
 
@@ -172,7 +172,7 @@ drizzle-orm 自身没有发布覆盖率阈值（`drizzle-orm/vitest.config.ts` �
 
 | 包 / 类型 | 内容 |
 |---|---|
-| `pg/types.go` | pg 类型常量与列修饰符：`BigSerial` / `Text` / `Timestamptz` / `Numeric` / `JsonB` / … |
+| `dialect/pg/types.go` | pg 类型常量与列修饰符：`BigSerial` / `Text` / `Timestamptz` / `Numeric` / `JsonB` / … |
 | `codegen/parser.go` | 解析 `mist:"..."` tag |
 | `codegen/validate.go` | tag 校验：非法类型名、重复列名、悬空 `references`、自相矛盾的修饰符 |
 | `codegen/emit.go` | 生成 `schema_gen.go` |
@@ -234,7 +234,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-20） · **粗估**：4 – 6 周 · **依赖**：M0、M1
 
-`pg/fixture_test.go` 锁住至少 40 条 SQL。同一个 builder 被 100 个 goroutine 渲染，`-race` 下无竞争。没有 join 时 select 列表仍写 `"users"."id"`，drizzle rc.5 写 `"id"`。where、order by、join 的形状与 rc.5 一致。这是有意保留：列引用只有 `GetSQL` 一种形状。见差异登记。
+`dialect/pg/fixture_test.go` 锁住至少 40 条 SQL。同一个 builder 被 100 个 goroutine 渲染，`-race` 下无竞争。没有 join 时 select 列表仍写 `"users"."id"`，drizzle rc.5 写 `"id"`。where、order by、join 的形状与 rc.5 一致。这是有意保留：列引用只有 `GetSQL` 一种形状。见差异登记。
 
 已落地：`pg.Select`、`From` / `Where` / `OrderBy` / `Limit` / `Offset`，五种 join，`pg.Insert` / `pg.Update` / `pg.Delete`（列清单、多行 values、`on conflict do nothing`、`set`、`where`、`returning`），`op` 的比较、`and` / `or` / `not`、`asc` / `desc`、`inArray` / `notInArray`、`between` / `notBetween`、`like` / `ilike` 及否定、`isNull` / `isNotNull`、`exists` / `notExists`。空 `inArray` 是 `1 = 0`，空 `notInArray` 是 `1 = 1`。标量子查询、`op.In` / `op.NotIn` 的 `in (select)`、`exists` 里的 select，以及 `As(别名)` 派生表可渲染。`insert` 的 `values` 可以放标量子查询，也可以改成 `insert ... select`。`groupBy` / `having` 可渲染，后写的覆盖先写的。链是不可变节点，分叉共享前缀。`All` / `One` / `Exec` 已接到执行层。`op.Count` / `Sum` / `Avg` / `Min` / `Max` 及 `count` / `sum` / `avg` 的 `distinct` 可用于 `groupBy`、`having`、`orderBy`。聚合单值用 `pg.Value[T]` 读取，多列用 `pg.Scan` 和调用方写的扫描函数。`pg.Select` 的行类型仍然来自表。`on conflict do update` 可带冲突目标、`set`、目标 `where` 和更新 `where`。集合运算 `union` / `union all` / `intersect` / `intersect all` / `except` / `except all` 可渲染。`select` 可以带 `with` / `with recursive`。`update` 可以 `from`，再接 inner / left / right / full join。`insert` / `update` / `delete` 也可以 `with` / `with recursive`。`delete` 可以 `using`。`select` 可以 `distinct` / `distinct on` / `for update`。算术是 `add` / `sub` / `mul` / `div`。Go 里函数和类型不能同名，所以类型留在 `query`，入口函数放在 `pg`。被连接的表是 `sql.Chunk`：方法不能再声明类型参数，行类型仍由 `From` 决定。
 
@@ -254,7 +254,7 @@ func scanUser(row pg.Row, u *User) error {
 | `query/cte.go` | `With` / `WithRecursive` |
 | `op/` | 调用点上的 `Eq` / `And` / `Desc` 等，语法对应 drizzle 的具名导入。实现委托给 `sql` 的 chunk |
 | `sql/agg.go` | `Count` / `Sum` / `Avg` / `Min` / `Max` + `Distinct` |
-| `pg/dialect_query.go` 等 | `BuildSelectQuery` / `BuildInsertQuery` / `BuildUpdateQuery` / `BuildDeleteQuery`（`pg/` 下的方言实现，`query/` 只负责拼装） |
+| `dialect/pg/dialect_query.go` 等 | `BuildSelectQuery` / `BuildInsertQuery` / `BuildUpdateQuery` / `BuildDeleteQuery`（`dialect/pg/` 下的方言实现，`query/` 只负责拼装） |
 
 #### 关键设计决策
 
@@ -295,8 +295,8 @@ func scanUser(row pg.Row, u *User) error {
 |---|---|
 | `session/session.go` | 方言无关的 `Session` 接口与执行流程：`Query` / `Exec` / `PreparedQuery` |
 | `session/tx.go` | `Tx(ctx, func(tx *Tx) error) error`、savepoint 嵌套 |
-| `pg/scan.go` | 驱动 `Row` 接口。扫描函数由 codegen 生成，本包不反射 |
-| `pg/db.go` | `DB` 门面：`Select()` / `Insert()` / `Update()` / `Delete()` / `Query` |
+| `dialect/pg/scan.go` | 驱动 `Row` 接口。扫描函数由 codegen 生成，本包不反射 |
+| `dialect/pg/db.go` | `DB` 门面：`Select()` / `Insert()` / `Update()` / `Delete()` / `Query` |
 | `pgx/` | pgx v5 驱动的 `Session` 实现 |
 | `std/` | `database/sql` 的 `Session` 实现 |
 
@@ -324,7 +324,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-20） · **粗估**：3 – 4 周 · **依赖**：M0、M3
 
-`pg/codecs` 提供六槽位 `Codec`。nil 编码器是直通，整数和 `text` 的生成列不挂 codec，整行扫描的分配次数不变。`numeric` 参数是 `$1::numeric`，数组是 `$1::text[]` / `$1::int4[][]`。没登记的类型名调用 `Bind` 会报「没有注册 codec」。几何、范围、向量这些类型不在这批里。
+`dialect/pg/codecs` 提供六槽位 `Codec`。nil 编码器是直通，整数和 `text` 的生成列不挂 codec，整行扫描的分配次数不变。`numeric` 参数是 `$1::numeric`，数组是 `$1::text[]` / `$1::int4[][]`。没登记的类型名调用 `Bind` 会报「没有注册 codec」。几何、范围、向量这些类型不在这批里。
 
 #### 目标
 
@@ -334,16 +334,16 @@ func scanUser(row pg.Row, u *User) error {
 
 | 包 / 类型 | 内容 |
 |---|---|
-| `pg/codecs/codec.go` | `Codec` 接口：`Cast` / `CastInJson` / `CastParam` / `Normalize` / `NormalizeInJson` / `NormalizeParam` |
-| `pg/codecs/registry.go` | `CodecCollection`：按 pg oid / 类型名解析 |
-| `pg/codecs/numeric.go` | `numeric` ↔ `decimal` / `string` |
-| `pg/codecs/json.go` | `json` / `jsonb` ↔ `struct` / `map` / `json.RawMessage` |
-| `pg/codecs/interval.go` | `interval` ↔ `time.Duration` / 自定义 |
-| `pg/codecs/bytes.go` | `bytea` ↔ `[]byte`（含 hex 转义） |
-| `pg/codecs/array.go` | 一维 / 多维数组的类型与 cast |
-| `pg/codecs/time.go` | `timestamptz` / `date` / `time` |
-| `pg/codecs/ints.go` | 各整数类型的范围检查 |
-| `pg/codecs/register.go` | 用户自定义 codec 的注册入口 |
+| `dialect/pg/codecs/codec.go` | `Codec` 接口：`Cast` / `CastInJson` / `CastParam` / `Normalize` / `NormalizeInJson` / `NormalizeParam` |
+| `dialect/pg/codecs/registry.go` | `CodecCollection`：按 pg oid / 类型名解析 |
+| `dialect/pg/codecs/numeric.go` | `numeric` ↔ `decimal` / `string` |
+| `dialect/pg/codecs/json.go` | `json` / `jsonb` ↔ `struct` / `map` / `json.RawMessage` |
+| `dialect/pg/codecs/interval.go` | `interval` ↔ `time.Duration` / 自定义 |
+| `dialect/pg/codecs/bytes.go` | `bytea` ↔ `[]byte`（含 hex 转义） |
+| `dialect/pg/codecs/array.go` | 一维 / 多维数组的类型与 cast |
+| `dialect/pg/codecs/time.go` | `timestamptz` / `date` / `time` |
+| `dialect/pg/codecs/ints.go` | 各整数类型的范围检查 |
+| `dialect/pg/codecs/register.go` | 用户自定义 codec 的注册入口 |
 
 #### 关键设计决策
 
@@ -386,7 +386,7 @@ func scanUser(row pg.Row, u *User) error {
 | `relation/filter.go` | `And` / `Or` / `Not` / `RawSQL`，以及列条件、`Exists` |
 | `relation/order.go` | `Asc` / `Desc` / `CountOrder` / `Aggregate` |
 | `relation/errors.go` | 未知关系、未知列、没有选出列 |
-| `pg/dialect_rqb.go` | `BuildRelationalQuery`，对应 `collectRelationalQuery` |
+| `dialect/pg/dialect_rqb.go` | `BuildRelationalQuery`，对应 `collectRelationalQuery` |
 | `relation/mapper.go` | 根行按字段地址扫描，嵌套 JSON 写入这些地址 |
 | `relation/strategy.go` | `basic` / `optimized` 的包裹判断 |
 
@@ -509,7 +509,7 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 
 **状态**：已完成（2026-11-23） · **粗估**：3 – 4 周 · **依赖**：M2（M6/M7 可选，这一刀没有搬）
 
-已落地的是 `mysql.Dialect` 和 `mysql.Open`。M2 的查询矩阵在 `mysql/fixture_test.go`：select / insert / update / delete、`with`、`union` / `intersect` / `except`、`for update of` 都能渲染。只写 `offset` 时补 `limit 18446744073709551615`，因为 MySQL 不允许单独的 `offset`。多表 update / delete 写成逗号来源，不沿用 PostgreSQL 的 `from` / `using` 位置。同一张表出现两次时，MySQL 会拒绝执行。`full join`、`distinct on`、`returning`、`on conflict` 直接报错。`op.ILike` 写成 `lower(列) like lower(参数)`，PostgreSQL 仍是 `ilike`。`mysql.FindMany` 用 `lateral` 和 `json_object` / `json_arrayagg`，包裹条件也和 PostgreSQL 不同，见 [ADR-0011](./docs/adr/0011-mysql-relational-query.md)。`on duplicate key update` 用 `OnDuplicateKeyUpdate` 和 `mysql.NewRow`，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`insert ignore` 用 `Insert.Ignore`，见 [ADR-0012](./docs/adr/0012-insert-ignore.md)。单表 `update` / `delete` 可以写 `order by` 和 `limit`，多表不行，见 [ADR-0013](./docs/adr/0013-write-order-limit.md)。`insert select` 套一层子查询，让 `mysql.NewRow` 仍指向拟写入的行。执行走 `database/sql` 和 `go-sql-driver/mysql`。`go test -tags integration ./mysql/` 已在 Kiri 的 MySQL 8.4（库 `mist`，`127.0.0.1:3306`）上通过，覆盖 join、`with`、集合运算、`offset`、`for update of`、`on duplicate key update`（含 `insert select`），以及插入、查询、更新、删除。`mysql/codecs` 覆盖 `decimal`、`json`、`datetime`、`blob`，占位符保持 `?`。没有数组，布尔仍是 `tinyint(1)`，扫描不收成 `bool`。`Table()` 返回 `mysql.TableMeta` 时，生成器写出 `mysql.Col`。`internal/mysqlfixture` 的生成结果已在 MySQL 8.4 上往返。`timestamptz`、`jsonb`、`boolean`、数组会报错。`sql/` 没有为 MySQL 加分支。`query.Insert` 增加了 `OnDuplicateKeyUpdate`，见 ADR-0010。
+已落地的是 `mysql.Dialect` 和 `mysql.Open`。M2 的查询矩阵在 `dialect/mysql/fixture_test.go`：select / insert / update / delete、`with`、`union` / `intersect` / `except`、`for update of` 都能渲染。只写 `offset` 时补 `limit 18446744073709551615`，因为 MySQL 不允许单独的 `offset`。多表 update / delete 写成逗号来源，不沿用 PostgreSQL 的 `from` / `using` 位置。同一张表出现两次时，MySQL 会拒绝执行。`full join`、`distinct on`、`returning`、`on conflict` 直接报错。`op.ILike` 写成 `lower(列) like lower(参数)`，PostgreSQL 仍是 `ilike`。`mysql.FindMany` 用 `lateral` 和 `json_object` / `json_arrayagg`，包裹条件也和 PostgreSQL 不同，见 [ADR-0011](./docs/adr/0011-mysql-relational-query.md)。`on duplicate key update` 用 `OnDuplicateKeyUpdate` 和 `mysql.NewRow`，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`insert ignore` 用 `Insert.Ignore`，见 [ADR-0012](./docs/adr/0012-insert-ignore.md)。单表 `update` / `delete` 可以写 `order by` 和 `limit`，多表不行，见 [ADR-0013](./docs/adr/0013-write-order-limit.md)。`insert select` 套一层子查询，让 `mysql.NewRow` 仍指向拟写入的行。执行走 `database/sql` 和 `go-sql-driver/mysql`。同一套包覆盖 MariaDB：标识符、占位符、增删改查和迁移相同。`FindMany` 写 `lateral`，当前 MariaDB 不接受。反读时 JSON 列是 `longtext` 加自动的 `json_valid` 检查，diff 不会空。`returning` 仍然报错。`go test -tags integration ./dialect/mysql/` 已在 Kiri 的 MySQL 8.4（库 `mist`，`127.0.0.1:3306`）上通过，覆盖 join、`with`、集合运算、`offset`、`for update of`、`on duplicate key update`（含 `insert select`），以及插入、查询、更新、删除。`dialect/mysql/codecs` 覆盖 `decimal`、`json`、`datetime`、`blob`，占位符保持 `?`。没有数组，布尔仍是 `tinyint(1)`，扫描不收成 `bool`。`Table()` 返回 `mysql.TableMeta` 时，生成器写出 `mysql.Col`。`internal/mysqlfixture` 的生成结果已在 MySQL 8.4 上往返。`timestamptz`、`jsonb`、`boolean`、数组会报错。`sql/` 没有为 MySQL 加分支。`query.Insert` 增加了 `OnDuplicateKeyUpdate`，见 ADR-0010。
 
 #### 目标
 
@@ -517,8 +517,8 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 
 #### 交付物
 
-- `mysql/`：类型、dialect、codecs（至少基础类型）
-- 不新增 `mysql/query/`：builder 复用 `query/`，方言差异只落在 `mysql/dialect*.go` 与 `mysql/codecs/`。如果复用不了，说明 M2 的抽象有问题，应先修抽象
+- `dialect/mysql/`：类型、dialect、codecs（至少基础类型）
+- 不新增 `dialect/mysql/query/`：builder 复用 `query/`，方言差异只落在 `dialect/mysql/dialect*.go` 与 `dialect/mysql/codecs/`。如果复用不了，说明 M2 的抽象有问题，应先修抽象
 - `mysqlx/` 或 `go-sql-driver/mysql` 驱动适配
 
 #### 必须处理的方言差异
@@ -778,16 +778,16 @@ M2 ──> M8 ──> M9
 
 | # | 里程碑 | 依赖 | 粗估 | 主要产出 | 状态 |
 |---|---|---|---|---|---|
-| M0 | 地基：SQL 片段层与渲染器 | — | 2–3 周 | `sql/`、`pg/dialect`、`internal/testutil` | 已完成 |
-| M1 | Schema 定义与代码生成 | M0 | 3–4 周 | `pg/types`、`codegen/`、`cmd/mist generate` | 已完成 |
+| M0 | 地基：SQL 片段层与渲染器 | — | 2–3 周 | `sql/`、`dialect/pg/dialect`、`internal/testutil` | 已完成 |
+| M1 | Schema 定义与代码生成 | M0 | 3–4 周 | `dialect/pg/types`、`codegen/`、`cmd/mist generate` | 已完成 |
 | M2 | 查询构建器（pg） | M0、M1 | 4–6 周 | `query/*`、`op` | 已完成 |
 | M3 | 执行层 | M2 | 2–3 周 | `pg.DB`、`std.DB`、事务 | 已完成 |
-| M4 | Codecs | M0、M3 | 3–4 周 | `pg/codecs/` | 已完成 |
-| M5 | 关系查询（RQB） | M2–M4 | 5–7 周 | `relation/`、`pg/dialect_rqb` | 已完成 |
+| M4 | Codecs | M0、M3 | 3–4 周 | `dialect/pg/codecs/` | 已完成 |
+| M5 | 关系查询（RQB） | M2–M4 | 5–7 周 | `relation/`、`dialect/pg/dialect_rqb` | 已完成 |
 | M6 | 迁移器 | M3 | 2–3 周 | `migrate/` | 已完成 |
 | M7 | DDL diff 与 CLI | M1、M6 | 8–12 周 | `introspect/`、`diff/`、`ddl/pg`、CLI | 已完成 |
-| M8 | 第二方言：MySQL | M2 | 3–4 周 | `mysql/` | 已完成 |
-| M9 | SQLite | M8 | 2–3 周 | `sqlite/`、`ddl/sqlite` | 已完成 |
+| M8 | 第二方言：MySQL | M2 | 3–4 周 | `dialect/mysql/` | 已完成 |
+| M9 | SQLite | M8 | 2–3 周 | `dialect/sqlite/`、`ddl/sqlite` | 已完成 |
 | M10 | 生态与打磨 | 持续 | — | 测试工具、基准、示例、文档 | 进行中 |
 
 **合计：34 – 49 人周。**
@@ -829,7 +829,7 @@ M2 ──> M8 ──> M9
 | 2026-11-23 | `mist ddl -write` 按快照写迁移目录。`mist migrate` 应用。`mist check` 对照快照和文件哈希。三次生成再应用，反读后 diff 为空 |
 | 2026-11-23 | M7：`mist push` 默认只打印 SQL，确认或 `--force` 才执行。20 张表的迁移应用到空库再反读，diff 为空 |
 | 2026-11-23 | M8 开始：MySQL 的反引号、`?` 占位符，以及 select / insert / update / delete。没有的语法报错，不改 `sql/` 和 `query/` |
-| 2026-11-23 | M8：MySQL 渲染 `with` 和集合运算。M2 查询矩阵在 `mysql/fixture_test.go`，方言限制单独成组 |
+| 2026-11-23 | M8：MySQL 渲染 `with` 和集合运算。M2 查询矩阵在 `dialect/mysql/fixture_test.go`，方言限制单独成组 |
 | 2026-11-23 | M8：MySQL 上跑通 join、`with`、集合运算、`offset` 和 `for update of`。单独的 `offset` 补上最大 `limit`。`ilike` 被服务器拒绝 |
 | 2026-11-23 | M8：`OnDuplicateKeyUpdate` 渲染 `on duplicate key update`。PostgreSQL 拒绝这个子句。见 ADR-0010 |
 | 2026-11-23 | M8：MySQL 的 `decimal` / `json` / `datetime` / `blob` 参数不加 `::类型`。往返已在 MySQL 8.4 上跑过。没有数组 |
@@ -853,3 +853,11 @@ M2 ──> M8 ──> M9
 | 2026-11-23 | 列上的错误写明表、列和期望。生成器、codec、扫描和关系过滤走这个格式。连接失败和迁移目录错误没有表可写 |
 | 2026-11-23 | 两条分支各写一份迁移时，按列、索引、约束做三方合并。合得上就在下一次快照里记下两个 parent；合不上，`ddl`、`check`、`migrate` 停住并写明目录和对象。旧目录不改 |
 | 2026-11-24 | `pg.DB`、`mysql.DB`、`sqlite.DB`、`std.DB` 都实现 `mist.DB`。应用在 `Open` 处选择驱动。`migrate.Run` 增加 MySQL 和 SQLite。Oracle 包能渲染并执行增删改查 |
+| 2026-11-24 | Oracle 补上 join、分组、`distinct`、`with`、集合运算、`for update`、`insert select`、迁移和 `FindMany`。`returning` 与 `on conflict` 仍报错。`ddl`、introspect、`push` 覆盖四种库。连接失败和迁移目录错误带上驱动名或路径 |
+| 2026-11-24 | `mysql` 包同时覆盖 MariaDB，不另开方言。`FindMany` 的 `lateral` 和 JSON 反读仍按 MySQL 8.4 的形状，MariaDB 上这两处对不上 |
+| 2026-11-24 | `pg` 包同时覆盖瀚高，不另开方言。语句按 PostgreSQL。pgx 不支持 SM3 认证。还没有在瀚高上跑过 |
+| 2026-11-24 | 人大金仓 V008R003C002B0320 用 `pg.Open` 连上，端口 `54321`，认证 `md5`。`returning`、`on conflict`、`with recursive`、`$1` 已在这台库上执行。字符串比较 `'A' = 'a'` 为真。`sm3` 没测 |
+| 2026-11-24 | 增加 `mssql`。查询、迁移、`ddl`、introspect、`push` 走 SQL Server。`returning` 不写成 `OUTPUT`，`on conflict` 不写成 `MERGE`。上述路径已在 SQL Server 2022 上跑过 |
+| 2026-11-24 | SQL Server 对齐 drizzle 的 `top` 和 `output`。`Top` 写成 `select top (n)`。`Output` 写成 `output inserted` / `output deleted`。`returning` 仍然报错。PostgreSQL、MySQL、SQLite、Oracle 拒绝这两条子句 |
+| 2026-11-24 | 方言包收到 `dialect/`：`dialect/pg`、`dialect/mysql`、`dialect/sqlite`、`dialect/oracle`、`dialect/mssql`、`dialect/dm`。`ddl/` 仍按库分目录。`std` 留在根目录，用 `database/sql` 执行 PostgreSQL |
+| 2026-11-24 | 增加 `dm`。查询、迁移、`ddl`、introspect、`push` 走达梦，占位符是 `?`，标识符用双引号。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。`FindMany` 还没有。查询已在 Kiri 的 DM8（`xuxuclassmate/dameng`，`127.0.0.1:5236`）上跑过。`FindMany`、迁移和 push 还没有在真库上跑 |

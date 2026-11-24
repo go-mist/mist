@@ -3,8 +3,8 @@ package testutil_test
 import (
 	"testing"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/internal/testutil"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/sql"
 )
 

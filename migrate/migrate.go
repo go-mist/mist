@@ -12,7 +12,7 @@ import (
 
 // Conn is a connection that can open a transaction.
 // pg.Migrator, mysql.Migrator, and sqlite.Migrator return one.
-// Driver is "pg", "mysql", or "sqlite".
+// Driver is "pg", "mysql", "sqlite", "oracle", or "mssql".
 type Conn interface {
 	Exec(ctx context.Context, sql string, args ...any) (int64, error)
 	Query(ctx context.Context, sql string, args ...any) (query.Rows, error)
@@ -23,7 +23,7 @@ type Conn interface {
 // sessionLocker is MySQL. GET_LOCK survives the commit that DDL performs,
 // and unlock runs after the migration transaction has finished.
 type sessionLocker interface {
-	SessionLock(ctx context.Context, name string) (unlock func() error, err error)
+	SessionLock(ctx context.Context, schema, name string) (unlock func() error, err error)
 }
 
 // Config names the migrations directory and the location of the migration table.
@@ -57,7 +57,7 @@ func Run(ctx context.Context, conn Conn, cfg Config) (int, error) {
 	}
 	var unlock func() error
 	if locker, ok := conn.(sessionLocker); ok {
-		unlock, err = locker.SessionLock(ctx, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
+		unlock, err = locker.SessionLock(ctx, schema, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
 		if err != nil {
 			return 0, err
 		}

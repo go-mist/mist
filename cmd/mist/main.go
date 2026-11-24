@@ -14,15 +14,24 @@ import (
 
 	"github.com/go-mist/mist"
 	"github.com/go-mist/mist/codegen"
+	"github.com/go-mist/mist/ddl"
+	dmddl "github.com/go-mist/mist/ddl/dm"
+	mssqlddl "github.com/go-mist/mist/ddl/mssql"
+	mysqlddl "github.com/go-mist/mist/ddl/mysql"
+	oracleddl "github.com/go-mist/mist/ddl/oracle"
 	pgddl "github.com/go-mist/mist/ddl/pg"
 	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
+	"github.com/go-mist/mist/dialect/dm"
+	"github.com/go-mist/mist/dialect/mssql"
+	"github.com/go-mist/mist/dialect/mysql"
+	"github.com/go-mist/mist/dialect/oracle"
+	"github.com/go-mist/mist/dialect/pg"
+	"github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/introspect"
 	"github.com/go-mist/mist/migrate"
-	"github.com/go-mist/mist/mysql"
-	"github.com/go-mist/mist/pg"
+	"github.com/go-mist/mist/query"
 	"github.com/go-mist/mist/schema"
-	"github.com/go-mist/mist/sqlite"
 )
 
 var schemaIdent = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -38,7 +47,7 @@ func main() {
 			fail(err)
 		}
 	case "ddl":
-		ddl(os.Args[2:])
+		ddlCmd(os.Args[2:])
 	case "check":
 		check(os.Args[2:])
 	case "migrate":
@@ -50,34 +59,24 @@ func main() {
 	}
 }
 
-func ddl(args []string) {
+func ddlCmd(args []string) {
 	fs := flag.NewFlagSet("ddl", flag.ExitOnError)
 	dir := fs.String("dir", ".", "schema package directory")
 	migrations := fs.String("migrations", "", "migration folder")
 	write := fs.Bool("write", false, "write the next migration into -migrations")
 	name := fs.String("name", "schema", "suffix of the new migration folder")
-	dialectName := fs.String("dialect", "pg", "pg or sqlite")
+	dialectName := fs.String("dialect", "pg", "pg, mysql, sqlite, oracle, mssql, or dm")
 	_ = fs.Parse(args)
 	want := load(*dir)
-	if *dialectName == "sqlite" {
-		if *migrations != "" || *write {
-			fail(fmt.Errorf("sqlite: migration folders, check, and push are still PostgreSQL-only. Column changes use ddl/sqlite.Render"))
-		}
-		sql, err := sqliteddl.Render(diff.Diff(want, schema.Schema{}), want)
-		if err != nil {
-			fail(err)
-		}
-		fmt.Print(sql)
-		return
-	}
-	if *dialectName != "pg" {
-		fail(fmt.Errorf("ddl: unknown dialect %s", *dialectName))
+	render, err := renderer(*dialectName, want)
+	if err != nil {
+		fail(err)
 	}
 	if *migrations == "" {
 		if *write {
 			fail(fmt.Errorf("ddl: -write requires -migrations"))
 		}
-		sql, err := pgddl.Render(diff.Diff(want, schema.Schema{}))
+		sql, err := render(diff.Diff(want, schema.Schema{}))
 		if err != nil {
 			fail(err)
 		}
@@ -85,7 +84,7 @@ func ddl(args []string) {
 		return
 	}
 	if *write {
-		written, err := pgddl.WriteMigration(*migrations, *name, time.Now().UTC(), want)
+		written, err := ddl.WriteMigration(*migrations, *name, time.Now().UTC(), want, render)
 		if err != nil {
 			fail(err)
 		}
@@ -97,7 +96,7 @@ func ddl(args []string) {
 		fmt.Println(written.Name)
 		return
 	}
-	sql, changes, err := pgddl.Plan(*migrations, want)
+	sql, changes, err := ddl.Plan(*migrations, want, render)
 	if err != nil {
 		fail(err)
 	}
@@ -117,7 +116,7 @@ func check(args []string) {
 	if *migrations == "" {
 		fail(fmt.Errorf("check: -migrations is required"))
 	}
-	changes, err := pgddl.Check(*migrations, load(*dir))
+	changes, err := ddl.Check(*migrations, load(*dir))
 	if err != nil {
 		fail(err)
 	}
@@ -133,7 +132,7 @@ func check(args []string) {
 func apply(args []string) {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
 	migrations := fs.String("migrations", "", "migration folder")
-	driver := fs.String("driver", "pg", "pg, mysql, or sqlite")
+	driver := fs.String("driver", "pg", "pg, mysql, sqlite, oracle, mssql, or dm")
 	dsn := fs.String("dsn", "", "connection string")
 	schemaName := fs.String("schema", "", "schema of the migration table")
 	table := fs.String("table", "", "migration table")
@@ -145,6 +144,12 @@ func apply(args []string) {
 		switch *driver {
 		case "mysql":
 			*dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
+		case "oracle":
+			*dsn = os.Getenv("ORACLE_DSN")
+		case "mssql":
+			*dsn = os.Getenv("MSSQL_DSN")
+		case "dm":
+			*dsn = os.Getenv("DM_DSN")
 		case "sqlite":
 			*dsn = ""
 		default:
@@ -191,66 +196,232 @@ func openMigrate(ctx context.Context, driver, dsn string) (migrate.Conn, func() 
 			return nil, nil, err
 		}
 		return sqlite.Migrator(db), db.Close, nil
+	case "oracle":
+		db, err := oracle.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return oracle.Migrator(db), db.Close, nil
+	case "mssql":
+		db, err := mssql.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return mssql.Migrator(db), db.Close, nil
+	case "dm":
+		db, err := dm.Open(ctx, dsn)
+		if err != nil {
+			return nil, nil, err
+		}
+		return dm.Migrator(db), db.Close, nil
 	default:
-		return nil, nil, fmt.Errorf("migrate: driver %q is not pg, mysql, or sqlite", driver)
+		return nil, nil, fmt.Errorf("migrate: driver %q is not pg, mysql, sqlite, oracle, mssql, or dm", driver)
 	}
 }
 
 func push(args []string) {
 	fs := flag.NewFlagSet("push", flag.ExitOnError)
 	dir := fs.String("dir", ".", "schema package directory")
-	dsn := fs.String("dsn", os.Getenv("DRIZZLE_PG_DSN"), "postgres dsn")
-	schemaName := fs.String("schema", "public", "schema to read and apply")
+	driver := fs.String("driver", "pg", "pg, mysql, sqlite, oracle, mssql, or dm")
+	dsn := fs.String("dsn", "", "connection string")
+	schemaName := fs.String("schema", "", "schema or database to read and apply")
 	force := fs.Bool("force", false, "apply without prompting")
 	_ = fs.Parse(args)
 	if *dsn == "" {
-		fail(fmt.Errorf("push: -dsn or DRIZZLE_PG_DSN is required"))
+		switch *driver {
+		case "mysql":
+			*dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
+		case "oracle":
+			*dsn = os.Getenv("ORACLE_DSN")
+		case "mssql":
+			*dsn = os.Getenv("MSSQL_DSN")
+		case "dm":
+			*dsn = os.Getenv("DM_DSN")
+		case "sqlite":
+			*dsn = ""
+		default:
+			*dsn = os.Getenv("DRIZZLE_PG_DSN")
+		}
 	}
-	if !schemaIdent.MatchString(*schemaName) {
+	if *dsn == "" {
+		fail(fmt.Errorf("push: -dsn is required"))
+	}
+	if *schemaName != "" && !schemaIdent.MatchString(*schemaName) {
 		fail(fmt.Errorf("push: schema %q is not a safe identifier", *schemaName))
 	}
 	ctx := context.Background()
-	db, err := pg.Open(ctx, *dsn)
-	if err != nil {
+	want := load(*dir)
+	if err := pushApply(ctx, *driver, *dsn, *schemaName, want, *force); err != nil {
 		fail(err)
 	}
-	defer db.Close()
-	actual, err := introspect.Read(ctx, db, *schemaName)
+}
+
+func renderer(name string, want schema.Schema) (ddl.Render, error) {
+	switch name {
+	case "", "pg", "postgres":
+		return pgddl.Render, nil
+	case "mysql":
+		return mysqlddl.Render, nil
+	case "oracle":
+		return oracleddl.Render, nil
+	case "mssql":
+		return mssqlddl.Render, nil
+	case "dm":
+		return dmddl.Render, nil
+	case "sqlite":
+		return func(changes []diff.Change) (string, error) {
+			return sqliteddl.Render(changes, want)
+		}, nil
+	default:
+		return nil, fmt.Errorf("ddl: dialect %q is not pg, mysql, sqlite, oracle, mssql, or dm", name)
+	}
+}
+
+func pushApply(ctx context.Context, driver, dsn, schemaName string, want schema.Schema, force bool) error {
+	render, err := renderer(driver, want)
+	if err != nil {
+		return err
+	}
+	switch driver {
+	case "", "pg", "postgres":
+		if schemaName == "" {
+			schemaName = "public"
+		}
+		db, err := pg.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.Read(ctx, db, schemaName)
+		}, func(sqlText string) error {
+			quoted := pg.Dialect{}.EscapeName(schemaName)
+			return db.Tx(ctx, func(tx mist.Tx) error {
+				if _, err := tx.Exec(ctx, "create schema if not exists "+quoted); err != nil {
+					return err
+				}
+				if _, err := tx.Exec(ctx, "set local search_path to "+quoted); err != nil {
+					return err
+				}
+				return ddl.Execute(ctx, tx, sqlText)
+			})
+		})
+	case "mysql":
+		db, err := mysql.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if schemaName == "" {
+			if err := introspectQueryString(ctx, db, &schemaName, "select database()"); err != nil {
+				return err
+			}
+		}
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.ReadMySQL(ctx, db, schemaName)
+		}, func(sqlText string) error {
+			return ddl.Execute(ctx, db, sqlText)
+		})
+	case "sqlite":
+		db, err := sqlite.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.ReadSQLite(ctx, db)
+		}, func(sqlText string) error {
+			return db.Tx(ctx, func(tx mist.Tx) error {
+				return ddl.Execute(ctx, tx, sqlText)
+			})
+		})
+	case "oracle":
+		db, err := oracle.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.ReadOracle(ctx, db, schemaName)
+		}, func(sqlText string) error {
+			return ddl.Execute(ctx, db, sqlText)
+		})
+	case "mssql":
+		db, err := mssql.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		if schemaName == "" {
+			schemaName = "dbo"
+		}
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.ReadMSSQL(ctx, db, schemaName)
+		}, func(sqlText string) error {
+			return db.Tx(ctx, func(tx mist.Tx) error {
+				return ddl.Execute(ctx, tx, sqlText)
+			})
+		})
+	case "dm":
+		db, err := dm.Open(ctx, dsn)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		return pushOne(ctx, driver, schemaName, want, render, force, db, func() (schema.Schema, error) {
+			return introspect.ReadDM(ctx, db, schemaName)
+		}, func(sqlText string) error {
+			return ddl.Execute(ctx, db, sqlText)
+		})
+	default:
+		return fmt.Errorf("push: driver %q is not pg, mysql, sqlite, oracle, mssql, or dm", driver)
+	}
+}
+
+func pushOne(ctx context.Context, driver, schemaName string, want schema.Schema, render ddl.Render, force bool, _ any, read func() (schema.Schema, error), apply func(string) error) error {
+	actual, err := read()
 	if err != nil {
 		if !strings.Contains(err.Error(), "does not exist") {
-			fail(err)
+			return err
 		}
 		actual = schema.Schema{}
 	}
-	want := load(*dir)
 	changes := diff.Diff(want, actual)
-	sqlText, err := pgddl.Render(changes)
+	sqlText, err := render(changes)
 	if err != nil {
-		fail(err)
+		return err
 	}
 	fmt.Print(sqlText)
 	if sqlText == "" {
 		fmt.Fprintln(os.Stderr, "no changes")
-		return
+		return nil
 	}
 	warnDestructive(changes)
-	if !acceptPush(*force) {
+	if !acceptPush(force) {
 		fmt.Fprintln(os.Stderr, "not applied")
-		return
+		return nil
 	}
-	quoted := pg.Dialect{}.EscapeName(*schemaName)
-	err = db.Tx(ctx, func(tx mist.Tx) error {
-		if _, err := tx.Exec(ctx, "create schema if not exists "+quoted); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, "set local search_path to "+quoted); err != nil {
-			return err
-		}
-		return pgddl.Execute(ctx, tx, sqlText)
-	})
+	_ = driver
+	_ = schemaName
+	_ = ctx
+	return apply(sqlText)
+}
+
+func introspectQueryString(ctx context.Context, db interface {
+	Query(ctx context.Context, sql string, args ...any) (query.Rows, error)
+}, dest *string, sql string) error {
+	rows, err := db.Query(ctx, sql)
 	if err != nil {
-		fail(err)
+		return err
 	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("introspect: missing database")
+	}
+	return rows.Scan(dest)
 }
 
 func acceptPush(force bool) bool {
@@ -308,7 +479,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mist generate [-dir .]")
 	fmt.Fprintln(os.Stderr, "       mist ddl [-dir .] [-dialect pg] [-migrations dir] [-write] [-name schema]")
 	fmt.Fprintln(os.Stderr, "       mist check -dir . -migrations dir")
-	fmt.Fprintln(os.Stderr, "       mist migrate -migrations dir [-dsn dsn] [-schema drizzle]")
-	fmt.Fprintln(os.Stderr, "       mist push [-dir .] [-schema public] [-dsn dsn] [--force]")
+	fmt.Fprintln(os.Stderr, "       mist migrate -migrations dir [-driver pg] [-dsn dsn] [-schema drizzle]")
+	fmt.Fprintln(os.Stderr, "       mist push [-dir .] [-driver pg] [-schema name] [-dsn dsn] [--force]")
 	os.Exit(2)
 }

@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-mist/mist/dialect/mysql"
+	"github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/migrate"
-	"github.com/go-mist/mist/mysql"
-	"github.com/go-mist/mist/sqlite"
 )
 
 func TestSQLiteMigrate(t *testing.T) {

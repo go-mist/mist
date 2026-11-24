@@ -34,11 +34,11 @@ func Read(folder string) ([]Migration, error) {
 	if _, err := os.Stat(journal); err == nil {
 		return nil, &JournalError{Path: journal}
 	} else if !os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("migrate: read %s: %w", journal, err)
 	}
 	entries, err := os.ReadDir(folder)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("migrate: read directory %s: %w", folder, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -55,7 +55,7 @@ func Read(folder string) ([]Migration, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("migrate: read %s: %w", path, err)
 		}
 		millis, err := FolderMillis(name)
 		if err != nil {

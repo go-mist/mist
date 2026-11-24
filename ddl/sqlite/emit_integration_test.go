@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	sqliteddl "github.com/go-mist/mist/ddl/sqlite"
+	"github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/schema"
-	"github.com/go-mist/mist/sqlite"
 )
 
 func TestAlterColumnRuns(t *testing.T) {

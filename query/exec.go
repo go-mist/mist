@@ -139,8 +139,11 @@ func (s Select[T]) scanAt(row sql.Row, dst *T, dest []any) error {
 	return fillCols(row, s.pickBuf[:n], dst, dest)
 }
 
-// Exec executes the insert. When Returning is set, use All or One instead.
+// Exec executes the insert. When Returning or Output is set, use All or One instead.
 func (ins Insert[T]) Exec(ctx context.Context, db Executor) (int64, error) {
+	if ins.outputSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	if len(ins.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
@@ -159,29 +162,34 @@ func (ins Insert[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 	})
 }
 
-// All executes an insert with RETURNING and fills T from the RETURNING columns.
+// All executes an insert with RETURNING or OUTPUT and fills T from those columns.
 func (ins Insert[T]) All(ctx context.Context, db Executor) ([]T, error) {
-	if len(ins.returning) == 0 {
-		return nil, errors.New("query: insert has no returning")
+	cols, err := ins.resultCols("insert")
+	if err != nil {
+		return nil, err
 	}
-	return allCols(ctx, db, ins.returning, func() (*sql.SQL, error) {
+	return allCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildInsertQuery(ins.Spec())
 	})
 }
 
-// One executes an insert with RETURNING and requires exactly one row.
+// One executes an insert with RETURNING or OUTPUT and requires exactly one row.
 func (ins Insert[T]) One(ctx context.Context, db Executor) (T, error) {
 	var zero T
-	if len(ins.returning) == 0 {
-		return zero, errors.New("query: insert has no returning")
+	cols, err := ins.resultCols("insert")
+	if err != nil {
+		return zero, err
 	}
-	return oneCols(ctx, db, ins.returning, func() (*sql.SQL, error) {
+	return oneCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildInsertQuery(ins.Spec())
 	})
 }
 
-// Exec executes the update. When Returning is set, use All or One instead.
+// Exec executes the update. When Returning or Output is set, use All or One instead.
 func (u Update[T]) Exec(ctx context.Context, db Executor) (int64, error) {
+	if u.outputInsertedSet || u.outputDeletedSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	if len(u.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
@@ -200,29 +208,34 @@ func (u Update[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 	})
 }
 
-// All executes an update with RETURNING.
+// All executes an update with RETURNING or OUTPUT.
 func (u Update[T]) All(ctx context.Context, db Executor) ([]T, error) {
-	if len(u.returning) == 0 {
-		return nil, errors.New("query: update has no returning")
+	cols, err := u.resultCols()
+	if err != nil {
+		return nil, err
 	}
-	return allCols(ctx, db, u.returning, func() (*sql.SQL, error) {
+	return allCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildUpdateQuery(u.Spec())
 	})
 }
 
-// One executes an update with RETURNING and requires exactly one row.
+// One executes an update with RETURNING or OUTPUT and requires exactly one row.
 func (u Update[T]) One(ctx context.Context, db Executor) (T, error) {
 	var zero T
-	if len(u.returning) == 0 {
-		return zero, errors.New("query: update has no returning")
+	cols, err := u.resultCols()
+	if err != nil {
+		return zero, err
 	}
-	return oneCols(ctx, db, u.returning, func() (*sql.SQL, error) {
+	return oneCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildUpdateQuery(u.Spec())
 	})
 }
 
-// Exec executes the delete. When Returning is set, use All or One instead.
+// Exec executes the delete. When Returning or Output is set, use All or One instead.
 func (d Delete[T]) Exec(ctx context.Context, db Executor) (int64, error) {
+	if d.outputSet {
+		return 0, errors.New("query: use All or One when output is set")
+	}
 	if len(d.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
@@ -231,25 +244,69 @@ func (d Delete[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 	})
 }
 
-// All executes a delete with RETURNING.
+// All executes a delete with RETURNING or OUTPUT.
 func (d Delete[T]) All(ctx context.Context, db Executor) ([]T, error) {
-	if len(d.returning) == 0 {
-		return nil, errors.New("query: delete has no returning")
+	cols, err := d.resultCols()
+	if err != nil {
+		return nil, err
 	}
-	return allCols(ctx, db, d.returning, func() (*sql.SQL, error) {
+	return allCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildDeleteQuery(d.Spec())
 	})
 }
 
-// One executes a delete with RETURNING and requires exactly one row.
+// One executes a delete with RETURNING or OUTPUT and requires exactly one row.
 func (d Delete[T]) One(ctx context.Context, db Executor) (T, error) {
 	var zero T
-	if len(d.returning) == 0 {
-		return zero, errors.New("query: delete has no returning")
+	cols, err := d.resultCols()
+	if err != nil {
+		return zero, err
 	}
-	return oneCols(ctx, db, d.returning, func() (*sql.SQL, error) {
+	return oneCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildDeleteQuery(d.Spec())
 	})
+}
+
+func (ins Insert[T]) resultCols(kind string) ([]Column[T], error) {
+	if ins.outputSet {
+		if len(ins.output) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return ins.output, nil
+	}
+	if len(ins.returning) == 0 {
+		return nil, errors.New("query: " + kind + " has no returning")
+	}
+	return ins.returning, nil
+}
+
+func (u Update[T]) resultCols() ([]Column[T], error) {
+	if u.outputInsertedSet || u.outputDeletedSet {
+		cols := make([]Column[T], 0, len(u.outputInserted)+len(u.outputDeleted))
+		cols = append(cols, u.outputInserted...)
+		cols = append(cols, u.outputDeleted...)
+		if len(cols) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return cols, nil
+	}
+	if len(u.returning) == 0 {
+		return nil, errors.New("query: update has no returning")
+	}
+	return u.returning, nil
+}
+
+func (d Delete[T]) resultCols() ([]Column[T], error) {
+	if d.outputSet {
+		if len(d.output) == 0 {
+			return nil, errors.New("query: output is missing columns")
+		}
+		return d.output, nil
+	}
+	if len(d.returning) == 0 {
+		return nil, errors.New("query: delete has no returning")
+	}
+	return d.returning, nil
 }
 
 func allCols[T any](ctx context.Context, db Executor, cols []Column[T], build func() (*sql.SQL, error)) ([]T, error) {

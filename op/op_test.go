@@ -3,8 +3,8 @@ package op_test
 import (
 	"testing"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/op"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/sql"
 )
 
