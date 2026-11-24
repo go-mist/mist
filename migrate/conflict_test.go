@@ -14,7 +14,7 @@ func TestHandWrittenSQLSkipsSnapshotMerge(t *testing.T) {
 	if err := os.Mkdir(folder, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(folder, "migration.sql"), []byte("select 1;\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(folder, "up.sql"), []byte("select 1;\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Run(context.Background(), nil, Config{Folder: dir})

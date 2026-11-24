@@ -4,8 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,15 @@ import (
 
 // breakpoint matches the rc.5 split marker verbatim.
 const breakpoint = "--> statement-breakpoint"
+
+// UpFile is the SQL Run applies. DownFile is reserved in the same directory and is not applied or hashed.
+const (
+	UpFile   = "up.sql"
+	DownFile = "down.sql"
+)
+
+// DownPlaceholder is the down.sql written when a migration directory is created.
+const DownPlaceholder = "-- Reserved. migrate does not apply this file.\n"
 
 // Migration is one migration on disk. Hash is computed from the raw file bytes. Splitting does not change it.
 type Migration struct {
@@ -24,21 +34,30 @@ type Migration struct {
 	FolderMillis int64
 }
 
-// Read reads a migrations directory. migration.sql in each subdirectory is one migration, ordered by directory name.
+// Read reads a migrations directory on disk. up.sql in each subdirectory is one migration, ordered by directory name. down.sql is ignored.
 // The first 14 characters of the directory name are a UTC timestamp YYYYMMDDHHMMSS, stored in created_at.
 func Read(folder string) ([]Migration, error) {
 	if folder == "" {
 		return nil, fmt.Errorf("migrate: missing migrations directory")
 	}
-	journal := filepath.Join(folder, "meta", "_journal.json")
-	if _, err := os.Stat(journal); err == nil {
+	return ReadFS(os.DirFS(folder))
+}
+
+// ReadFS reads the same layout as Read from fsys. The root of fsys is the migrations directory.
+// embed.FS and os.DirFS both work. down.sql is ignored.
+func ReadFS(fsys fs.FS) ([]Migration, error) {
+	if fsys == nil {
+		return nil, fmt.Errorf("migrate: missing migrations directory")
+	}
+	journal := path.Join("meta", "_journal.json")
+	if _, err := fs.Stat(fsys, journal); err == nil {
 		return nil, &JournalError{Path: journal}
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("migrate: read %s: %w", journal, err)
 	}
-	entries, err := os.ReadDir(folder)
+	entries, err := fs.ReadDir(fsys, ".")
 	if err != nil {
-		return nil, fmt.Errorf("migrate: read directory %s: %w", folder, err)
+		return nil, fmt.Errorf("migrate: read directory: %w", err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -49,13 +68,13 @@ func Read(folder string) ([]Migration, error) {
 	sort.Strings(names)
 	out := make([]Migration, 0, len(names))
 	for _, name := range names {
-		path := filepath.Join(folder, name, "migration.sql")
-		raw, err := os.ReadFile(path)
+		file := path.Join(name, UpFile)
+		raw, err := fs.ReadFile(fsys, file)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("migrate: read %s: %w", path, err)
+			return nil, fmt.Errorf("migrate: read %s: %w", file, err)
 		}
 		millis, err := FolderMillis(name)
 		if err != nil {
@@ -64,7 +83,7 @@ func Read(folder string) ([]Migration, error) {
 		sum := sha256.Sum256(raw)
 		out = append(out, Migration{
 			Name:         name,
-			Path:         path,
+			Path:         file,
 			Statements:   splitSQL(string(raw)),
 			Hash:         hex.EncodeToString(sum[:]),
 			FolderMillis: millis,

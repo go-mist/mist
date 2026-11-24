@@ -39,7 +39,7 @@ func Plan(folder string, desired schema.Schema) (string, []diff.Change, error) {
 	return sql, changes, nil
 }
 
-// WriteMigration writes the next change as a new directory containing migration.sql and snapshot.json.
+// WriteMigration writes the next change as a new directory containing up.sql, down.sql, and snapshot.json. down.sql is reserved and is not applied.
 // The snapshot records the schema after this migration, the sha256 of that SQL file, and the ids of the snapshots it continues.
 // Two latest snapshots that change different columns, indexes, or constraints are both recorded. A shared object stops the write.
 // Earlier directories are left unchanged. It does not write meta/_journal.json. The migrator rejects a directory that contains that file.
@@ -79,7 +79,11 @@ func WriteMigration(folder, name string, at time.Time, desired schema.Schema) (W
 		return Written{}, err
 	}
 	sqlBytes := []byte(sql)
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), sqlBytes, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, migrate.UpFile), sqlBytes, 0o644); err != nil {
+		os.RemoveAll(dir)
+		return Written{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, migrate.DownFile), []byte(migrate.DownPlaceholder), 0o644); err != nil {
 		os.RemoveAll(dir)
 		return Written{}, err
 	}

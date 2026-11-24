@@ -144,7 +144,7 @@ func TestMSSQLMigrate(t *testing.T) {
 	if err := os.MkdirAll(dir+"/20261124130000_init", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dir+"/20261124130000_init/migration.sql", []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(dir+"/20261124130000_init/up.sql", []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, stmt := range []string{

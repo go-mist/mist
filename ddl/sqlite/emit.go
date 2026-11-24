@@ -14,7 +14,7 @@ import (
 // breakpoint matches migrate's split marker verbatim.
 const breakpoint = "--> statement-breakpoint"
 
-// Render writes the changes as the body of migration.sql. want is the structure after the change and is used to rebuild the whole table when a column changes.
+// Render writes the changes as the body of up.sql. want is the structure after the change and is used to rebuild the whole table when a column changes.
 // No changes returns an empty string.
 func Render(changes []diff.Change, want schema.Schema) (string, error) {
 	stmts, err := statements(changes, want)

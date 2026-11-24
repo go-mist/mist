@@ -126,9 +126,12 @@ PostgreSQL stores `drizzle.__drizzle_migrations` and takes `pg_advisory_xact_loc
 Each migration is a directory. `snapshot.json` is the schema after that migration. A later `ddl -write` adds a new directory and leaves the old one unchanged. Two latest directories that change different columns, indexes, or constraints are both parents of the next migration. A shared object stops `ddl`, `check`, and `migrate`.
 
 ```
-migrations/20261123135846_init/migration.sql
+migrations/20261123135846_init/up.sql
+migrations/20261123135846_init/down.sql
 migrations/20261123135846_init/snapshot.json
 ```
+
+`up.sql` is what `migrate.Run` applies. `down.sql` is reserved and is not applied. The hash is the bytes of `up.sql`.
 
 ```
 mist ddl -dir . -migrations migrations -write -name init
@@ -142,6 +145,18 @@ mist migrate -driver oracle -migrations migrations
 
 ```go
 applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{
+	Folder: "migrations",
+})
+```
+
+`Config.FS` reads the same files from an `fs.FS`. `Folder` is the directory inside that filesystem. `//go:embed all:migrations` keeps `up.sql`, `down.sql`, and `snapshot.json`.
+
+```go
+//go:embed all:migrations
+var migrations embed.FS
+
+applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{
+	FS:     migrations,
 	Folder: "migrations",
 })
 ```

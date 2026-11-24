@@ -205,7 +205,7 @@ func writeMig(t *testing.T, root, name, body string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "up.sql"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

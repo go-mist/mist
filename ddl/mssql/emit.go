@@ -15,7 +15,7 @@ import (
 
 const breakpoint = "--> statement-breakpoint"
 
-// Render writes the changes as the body of one migration.sql. No changes returns an empty string.
+// Render writes the changes as the body of one up.sql. No changes returns an empty string.
 func Render(changes []diff.Change) (string, error) {
 	stmts, err := statements(changes)
 	if err != nil {

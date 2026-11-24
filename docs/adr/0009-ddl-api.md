@@ -18,7 +18,7 @@ CLI 要把结构体变成 SQL，测试也要能不启动命令就比较两份 sc
 - `diff.Diff`：期望结构对实际结构
 - `ddl/pg.Render`：变更集写成 PostgreSQL 语句，语句之间用 `--> statement-breakpoint` 切开
 
-`mist generate` 继续给 `go:generate` 写 Go 描述符。`mist ddl` 不带 `-migrations` 时对照空库，把 SQL 打到标准输出。带了 `-migrations` 就对照最新快照。只有一份最新快照时用它；有两份时，按列、索引、约束做三方合并，改得不一样就停。`-write` 新建一个目录，里面是这次的 `migration.sql` 和 `snapshot.json`。快照记下这次 SQL 的 sha256，以及它接着哪些快照。已经写过的目录不再改。不写 `meta/_journal.json`。
+`mist generate` 继续给 `go:generate` 写 Go 描述符。`mist ddl` 不带 `-migrations` 时对照空库，把 SQL 打到标准输出。带了 `-migrations` 就对照最新快照。只有一份最新快照时用它；有两份时，按列、索引、约束做三方合并，改得不一样就停。`-write` 新建一个目录，里面是这次的 `up.sql`、`down.sql` 和 `snapshot.json`。`down.sql` 只占位，不执行。快照记下这次 `up.sql` 的 sha256，以及它接着哪些快照。已经写过的目录不再改。不写 `meta/_journal.json`。
 
 `mist check` 看期望结构是否还和快照一致，以及迁移文件有没有被改过。它不重放 SQL。`mist migrate` 调用 `migrate.Run` 应用目录。
 

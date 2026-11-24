@@ -418,7 +418,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-20） · **粗估**：2 – 3 周 · **依赖**：M3
 
-`migrate.Run` 读取子目录里的 `migration.sql`。一次调用里的语句放在同一个事务中，失败则整批回滚。事务开始后先拿 `pg_advisory_xact_lock`，再读已应用的 `name`。空语句会被丢掉，sha256 仍按文件原文计算。目录名前 14 位必须是合法的 UTC 时间。CLI 的 `mist migrate` 留在 M7。
+`migrate.Run` 读取子目录里的 `up.sql`。`down.sql` 先留在同一目录，不执行，也不参与 sha256。一次调用里的语句放在同一个事务中，失败则整批回滚。事务开始后先拿 `pg_advisory_xact_lock`，再读已应用的 `name`。空语句会被丢掉，sha256 仍按 `up.sql` 原文计算。目录名前 14 位必须是合法的 UTC 时间。CLI 的 `mist migrate` 留在 M7。
 
 #### 目标
 
@@ -460,7 +460,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-23） · **粗估**：8 – 12 周（最重） · **依赖**：M1、M6
 
-`mist ddl -migrations -write` 在新目录里写下一次 `migration.sql` 和 `snapshot.json`。旧目录不改。两份最新快照如果改的不是同一个列、索引或约束，下一次的 `prevIds` 带上这两份，SQL 只含新的差异；改的是同一个对象时，`ddl`、`check` 和 `migrate` 都停。`mist migrate` 应用目录。`mist check` 对照快照和每个 `migration.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
+`mist ddl -migrations -write` 在新目录里写下一次 `up.sql`、`down.sql` 和 `snapshot.json`。`down.sql` 只占位，不执行。旧目录不改。两份最新快照如果改的不是同一个列、索引或约束，下一次的 `prevIds` 带上这两份，SQL 只含新的差异；改的是同一个对象时，`ddl`、`check` 和 `migrate` 都停。`mist migrate` 应用目录。`mist check` 对照快照和每个 `up.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
 
 #### 目标
 

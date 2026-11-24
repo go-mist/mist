@@ -23,7 +23,7 @@ type Written struct {
 	Changes []diff.Change
 }
 
-// Render turns a diff into the body of migration.sql.
+// Render turns a diff into the body of up.sql.
 type Render func(changes []diff.Change) (string, error)
 
 var migrationName = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
@@ -42,7 +42,7 @@ func Plan(folder string, desired schema.Schema, render Render) (string, []diff.C
 	return sql, changes, nil
 }
 
-// WriteMigration writes the next change as a new directory containing migration.sql and snapshot.json.
+// WriteMigration writes the next change as a new directory containing up.sql, down.sql, and snapshot.json. down.sql is reserved and is not applied.
 func WriteMigration(folder, name string, at time.Time, desired schema.Schema, render Render) (Written, error) {
 	if folder == "" {
 		return Written{}, fmt.Errorf("ddl: missing migrations directory")
@@ -79,9 +79,13 @@ func WriteMigration(folder, name string, at time.Time, desired schema.Schema, re
 		return Written{}, fmt.Errorf("ddl: create migration directory %s: %w", dir, err)
 	}
 	sqlBytes := []byte(sql)
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), sqlBytes, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, migrate.UpFile), sqlBytes, 0o644); err != nil {
 		os.RemoveAll(dir)
-		return Written{}, fmt.Errorf("ddl: write %s: %w", filepath.Join(dir, "migration.sql"), err)
+		return Written{}, fmt.Errorf("ddl: write %s: %w", filepath.Join(dir, migrate.UpFile), err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, migrate.DownFile), []byte(migrate.DownPlaceholder), 0o644); err != nil {
+		os.RemoveAll(dir)
+		return Written{}, fmt.Errorf("ddl: write %s: %w", filepath.Join(dir, migrate.DownFile), err)
 	}
 	sum := sha256.Sum256(sqlBytes)
 	prev := []string{}

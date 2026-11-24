@@ -2,7 +2,7 @@ package migrate
 
 import "fmt"
 
-// HashError means a migration already recorded in the database does not match the file on disk.
+// HashError means a migration already recorded in the database does not match the migration file.
 type HashError struct {
 	Name string
 	Path string
