@@ -596,8 +596,8 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 | testcontainers | 集成测试在没有 DSN 时用 testcontainers 起 PostgreSQL 16 和 MySQL 8.4。SQLite 是临时文件，驱动嵌在进程里。GitHub Actions 走这条路径 | 已完成 |
 | Benchmark | `bench/` 对比 mist、sqlx、gorm、ent、bun 的查询构建、结果映射、并发执行。Actions 把 `bench.txt` 存成 artifact | 已完成 |
 | 示例项目 | `examples/tasks`：标准库 CLI 和 HTTP，覆盖生成、迁移、增删改查和事务 | 已完成 |
-| 文档站 | pkg.go.dev 之外的教程、迁移指南（从 gorm / sqlc 过来） | 未开工 |
-| 发布流程 | tag、changelog、语义化版本 | 未开工 |
+| 文档站 | https://go-mist.github.io/ 已挂上短指南。从 gorm / sqlc 过来的迁移指南还没有 | 进行中 |
+| 发布流程 | v0.1.0 已打 tag，说明见 CHANGELOG.md。0.x 仍可能改 API | 已完成 |
 | 错误信息 | 生成、编码、扫描、关系过滤里能定位到列的错误写明表、列和期望。连接和迁移目录这类错误不编造表名 | 进行中 |
 
 ---
@@ -861,3 +861,4 @@ M2 ──> M8 ──> M9
 | 2026-11-24 | SQL Server 对齐 drizzle 的 `top` 和 `output`。`Top` 写成 `select top (n)`。`Output` 写成 `output inserted` / `output deleted`。`returning` 仍然报错。PostgreSQL、MySQL、SQLite、Oracle 拒绝这两条子句 |
 | 2026-11-24 | 方言包收到 `dialect/`：`dialect/pg`、`dialect/mysql`、`dialect/sqlite`、`dialect/oracle`、`dialect/mssql`、`dialect/dm`。`ddl/` 仍按库分目录。`std` 留在根目录，用 `database/sql` 执行 PostgreSQL |
 | 2026-11-24 | 增加 `dm`。查询、迁移、`ddl`、introspect、`push` 走达梦，占位符是 `?`，标识符用双引号。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。`FindMany` 还没有。查询已在 Kiri 的 DM8（`xuxuclassmate/dameng`，`127.0.0.1:5236`）上跑过。`FindMany`、迁移和 push 还没有在真库上跑 |
+| 2026-11-25 | v0.1.0。迁移目录是 `up.sql`、占位的 `down.sql` 和 `snapshot.json`。`down.sql` 不执行。`migrate.Run` 可以读 `embed.FS`。边界写在 CHANGELOG.md |
