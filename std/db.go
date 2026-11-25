@@ -11,8 +11,8 @@ import (
 	"fmt"
 
 	"github.com/go-mist/mist"
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/logger"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -47,11 +47,11 @@ func Open(ctx context.Context, driver, dsn string, opts ...Option) (*DB, error) 
 	}
 	sqldb, err := sql.Open(driver, dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("std: connect: %w", err)
 	}
 	if err := sqldb.PingContext(ctx); err != nil {
 		_ = sqldb.Close()
-		return nil, err
+		return nil, fmt.Errorf("std: connect: %w", err)
 	}
 	db := &DB{sqldb: sqldb}
 	apply(db, opts)

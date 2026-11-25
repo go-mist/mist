@@ -121,7 +121,7 @@ func (ins Insert[T]) tryFastExec(ctx context.Context, db Executor) (int64, bool,
 		return 0, false, nil
 	}
 	if ins.nothing || ins.duplicate || ins.ignore || ins.sel != nil || ins.sets != nil ||
-		len(ins.withs) > 0 || len(ins.conflict) > 0 || len(ins.returning) > 0 ||
+		len(ins.withs) > 0 || len(ins.conflict) > 0 || len(ins.returning) > 0 || ins.outputSet ||
 		ins.conflictWhere != nil || ins.setWhere != nil || ins.table == nil {
 		return 0, false, nil
 	}
@@ -215,7 +215,8 @@ func (ins Insert[T]) buildInsert(d dialect.Dialect) (string, bool) {
 
 func (u Update[T]) tryFastExec(ctx context.Context, db Executor) (int64, bool, error) {
 	if u.sets != nil || u.nSets == 0 || u.nSets > len(u.setCols) || u.from != nil || u.joins != nil ||
-		len(u.order) > 0 || u.limitSet || len(u.returning) > 0 || len(u.withs) > 0 || u.table == nil {
+		len(u.order) > 0 || u.limitSet || len(u.returning) > 0 || u.outputInsertedSet || u.outputDeletedSet ||
+		len(u.withs) > 0 || u.table == nil {
 		return 0, false, nil
 	}
 	tab, ok := stablePtr(u.table)
@@ -350,7 +351,7 @@ func (u Update[T]) buildUpdate(d dialect.Dialect) (string, bool) {
 
 func (s Select[T]) tryFastQuery(ctx context.Context, db Executor) (Rows, bool, error) {
 	if s.tail != nil || s.distinct || len(s.distinctOn) > 0 || len(s.order) > 0 || s.picked != nil ||
-		s.nPick == 0 || s.nPick > len(s.pickBuf) || s.from == nil || (s.offsetSet && !s.limitSet) {
+		s.topSet || s.nPick == 0 || s.nPick > len(s.pickBuf) || s.from == nil || (s.offsetSet && !s.limitSet) {
 		return nil, false, nil
 	}
 	from, ok := stablePtr(s.from)

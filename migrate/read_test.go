@@ -3,6 +3,7 @@ package migrate
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -43,6 +44,26 @@ func TestReadSplitsAndSorts(t *testing.T) {
 	}
 }
 
+func TestReadNamesTheDirectory(t *testing.T) {
+	_, err := Read(filepath.Join(t.TempDir(), "missing"))
+	if err == nil || !strings.Contains(err.Error(), "migrate: read directory") {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	name := "20240101000000_init"
+	if err := os.Mkdir(filepath.Join(dir, name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, name, "up.sql")
+	if err := os.Mkdir(file, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Read(dir)
+	if err == nil || !strings.Contains(err.Error(), "migrate: read "+name+"/up.sql") {
+		t.Fatal(err)
+	}
+}
+
 func TestReadRejectsJournal(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "meta"), 0o755); err != nil {
@@ -62,9 +83,9 @@ func TestReadRejectsJournal(t *testing.T) {
 
 func TestPendingFillsGapAndChecksHash(t *testing.T) {
 	local := []Migration{
-		{Name: "a", Path: "a/migration.sql", Hash: "1"},
-		{Name: "b", Path: "b/migration.sql", Hash: "2"},
-		{Name: "c", Path: "c/migration.sql", Hash: "3"},
+		{Name: "a", Path: "a/up.sql", Hash: "1"},
+		{Name: "b", Path: "b/up.sql", Hash: "2"},
+		{Name: "c", Path: "c/up.sql", Hash: "3"},
 	}
 	got, err := pending(local, []appliedRow{{Name: "c", Hash: "3"}, {Name: "a", Hash: "1"}})
 	if err != nil {
@@ -75,7 +96,7 @@ func TestPendingFillsGapAndChecksHash(t *testing.T) {
 	}
 	_, err = pending(local, []appliedRow{{Name: "a", Hash: "changed"}})
 	hashErr, ok := err.(*HashError)
-	if !ok || hashErr.Name != "a" || hashErr.Path != "a/migration.sql" {
+	if !ok || hashErr.Name != "a" || hashErr.Path != "a/up.sql" {
 		t.Fatalf("hash error = %v", err)
 	}
 }
@@ -86,7 +107,7 @@ func writeMigration(t *testing.T, root, name, body string) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "up.sql"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

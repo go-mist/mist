@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/internal/schemafixture"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
 )
 

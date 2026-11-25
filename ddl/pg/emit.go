@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/diff"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/schema"
 )
 
 // breakpoint matches migrate's split marker verbatim.
 const breakpoint = "--> statement-breakpoint"
 
-// Render writes the changes as the body of one migration.sql. No changes returns an empty string.
+// Render writes the changes as the body of one up.sql. No changes returns an empty string.
 func Render(changes []diff.Change) (string, error) {
 	stmts, err := statements(changes)
 	if err != nil {

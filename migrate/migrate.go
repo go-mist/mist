@@ -3,6 +3,9 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -12,7 +15,7 @@ import (
 
 // Conn is a connection that can open a transaction.
 // pg.Migrator, mysql.Migrator, and sqlite.Migrator return one.
-// Driver is "pg", "mysql", or "sqlite".
+// Driver is "pg", "mysql", "sqlite", "oracle", or "mssql".
 type Conn interface {
 	Exec(ctx context.Context, sql string, args ...any) (int64, error)
 	Query(ctx context.Context, sql string, args ...any) (query.Rows, error)
@@ -23,12 +26,16 @@ type Conn interface {
 // sessionLocker is MySQL. GET_LOCK survives the commit that DDL performs,
 // and unlock runs after the migration transaction has finished.
 type sessionLocker interface {
-	SessionLock(ctx context.Context, name string) (unlock func() error, err error)
+	SessionLock(ctx context.Context, schema, name string) (unlock func() error, err error)
 }
 
-// Config names the migrations directory and the location of the migration table.
+// Config names where the migrations live and where the migration table is.
+// Folder is a disk directory when FS is nil.
+// FS reads that same layout from an fs.FS, including embed.FS.
+// When both are set, Folder is the directory inside FS.
 type Config struct {
 	Folder string
+	FS     fs.FS
 	Schema string
 	Table  string
 }
@@ -37,7 +44,11 @@ type Config struct {
 // An already applied name applies zero migrations the next time. A name missing in the middle is filled in, without consulting the created_at watermark.
 // If an already recorded file's contents have changed, Run returns HashError, and the message includes the directory name.
 func Run(ctx context.Context, conn Conn, cfg Config) (int, error) {
-	if err := history.Conflicts(cfg.Folder); err != nil {
+	files, err := openFS(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if err := history.ConflictsFS(files); err != nil {
 		return 0, err
 	}
 	if conn == nil {
@@ -51,13 +62,13 @@ func Run(ctx context.Context, conn Conn, cfg Config) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	local, err := Read(cfg.Folder)
+	local, err := ReadFS(files)
 	if err != nil {
 		return 0, err
 	}
 	var unlock func() error
 	if locker, ok := conn.(sessionLocker); ok {
-		unlock, err = locker.SessionLock(ctx, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
+		unlock, err = locker.SessionLock(ctx, schema, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
 		if err != nil {
 			return 0, err
 		}
@@ -241,6 +252,28 @@ func scanText(rows query.Rows) (string, error) {
 }
 
 var identRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// openFS returns the migrations directory. A nil FS reads Folder from disk.
+// A set FS uses Folder as a directory inside it; an empty Folder is the root of FS.
+func openFS(cfg Config) (fs.FS, error) {
+	if cfg.FS != nil {
+		if cfg.Folder == "" {
+			return cfg.FS, nil
+		}
+		sub, err := fs.Sub(cfg.FS, filepath.ToSlash(cfg.Folder))
+		if err != nil {
+			return nil, fmt.Errorf("migrate: open %s: %w", cfg.Folder, err)
+		}
+		if _, err := fs.Stat(sub, "."); err != nil {
+			return nil, fmt.Errorf("migrate: open %s: %w", cfg.Folder, err)
+		}
+		return sub, nil
+	}
+	if cfg.Folder == "" {
+		return nil, fmt.Errorf("migrate: missing migrations directory")
+	}
+	return os.DirFS(cfg.Folder), nil
+}
 
 func hasName(cols []string) bool {
 	for _, col := range cols {

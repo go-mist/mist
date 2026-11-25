@@ -9,11 +9,11 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/glebarez/sqlite"
+	mist "github.com/go-mist/mist/dialect/sqlite"
+	"github.com/go-mist/mist/op"
 	"github.com/jmoiron/sqlx"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
-	"github.com/go-mist/mist/op"
-	mist "github.com/go-mist/mist/sqlite"
 	"gorm.io/gorm"
 	gormlog "gorm.io/gorm/logger"
 

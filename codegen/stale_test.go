@@ -21,7 +21,7 @@ func TestStaleGenerateDoesNotCompile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(mod), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	schema := "package stale\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
+	schema := "package stale\n\nimport \"github.com/go-mist/mist/dialect/pg\"\n\n" +
 		"type User struct {\n" +
 		"\tID int64 `mist:\"id,bigserial,pk\"`\n" +
 		"\tEmail *string `mist:\"email,text\"`\n" +
@@ -33,7 +33,7 @@ func TestStaleGenerateDoesNotCompile(t *testing.T) {
 	if err := codegen.Generate(dir); err != nil {
 		t.Fatal(err)
 	}
-	without := "package stale\n\nimport \"github.com/go-mist/mist/pg\"\n\n" +
+	without := "package stale\n\nimport \"github.com/go-mist/mist/dialect/pg\"\n\n" +
 		"type User struct {\n" +
 		"\tID int64 `mist:\"id,bigserial,pk\"`\n" +
 		"}\n\n" +

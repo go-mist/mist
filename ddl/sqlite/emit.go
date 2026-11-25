@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
+	mistsqlite "github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/diff"
 	"github.com/go-mist/mist/schema"
-	mistsqlite "github.com/go-mist/mist/sqlite"
 )
 
 // breakpoint matches migrate's split marker verbatim.
 const breakpoint = "--> statement-breakpoint"
 
-// Render writes the changes as the body of migration.sql. want is the structure after the change and is used to rebuild the whole table when a column changes.
+// Render writes the changes as the body of up.sql. want is the structure after the change and is used to rebuild the whole table when a column changes.
 // No changes returns an empty string.
 func Render(changes []diff.Change, want schema.Schema) (string, error) {
 	stmts, err := statements(changes, want)
@@ -197,7 +197,7 @@ func columnSQL(col schema.Column, primary bool) string {
 	if col.Generated != "" {
 		sql += " GENERATED ALWAYS AS (" + col.Generated + ") STORED"
 	}
-	if col.NotNull && !primary {
+	if col.NotNull {
 		sql += " NOT NULL"
 	}
 	if col.Default != "" && col.Generated == "" {

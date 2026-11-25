@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/go-mist/mist"
+	"github.com/go-mist/mist/dialect/mysql"
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/migrate"
-	"github.com/go-mist/mist/mysql"
 	"github.com/go-mist/mist/op"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/query"
 )
 

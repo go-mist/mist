@@ -78,11 +78,11 @@ func needsTime(tables []table) bool {
 func dialectImport(dialect string) string {
 	switch dialect {
 	case "mysql":
-		return "github.com/go-mist/mist/mysql"
+		return "github.com/go-mist/mist/dialect/mysql"
 	case "mist":
 		return "github.com/go-mist/mist"
 	default:
-		return "github.com/go-mist/mist/pg"
+		return "github.com/go-mist/mist/dialect/pg"
 	}
 }
 

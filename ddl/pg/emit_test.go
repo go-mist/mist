@@ -47,7 +47,7 @@ func TestFixtureSplitsAsMigration(t *testing.T) {
 	if err := os.Mkdir(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "migration.sql"), []byte(sqlText), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sub, "up.sql"), []byte(sqlText), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	migs, err := migrate.Read(dir)

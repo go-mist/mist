@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/go-mist/mist/dialect/pg"
 	"github.com/go-mist/mist/internal/schemafixture"
 	"github.com/go-mist/mist/op"
-	"github.com/go-mist/mist/pg"
 	"github.com/go-mist/mist/sql"
 )
 

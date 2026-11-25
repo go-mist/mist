@@ -5,8 +5,8 @@ package schemafixture
 import (
 	"time"
 
-	"github.com/go-mist/mist/pg"
-	"github.com/go-mist/mist/pg/codecs"
+	"github.com/go-mist/mist/dialect/pg"
+	"github.com/go-mist/mist/dialect/pg/codecs"
 	"github.com/go-mist/mist/sql"
 )
 

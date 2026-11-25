@@ -49,7 +49,11 @@ type InsertSpec struct {
 	Ignore       bool
 	Duplicate    []Assignment
 	Returning    []sql.Chunk
-	With         []WithSpec
+	// Output is SQL Server OUTPUT INSERTED. HasOutput is set even when the column list is empty.
+	// This is not RETURNING.
+	Output    []sql.Chunk
+	HasOutput bool
+	With      []WithSpec
 	// When Select is non-nil the statement is insert ... select and values are not written.
 	Select *SelectSpec
 }
@@ -67,7 +71,13 @@ type UpdateSpec struct {
 	Limit     int
 	LimitSet  bool
 	Returning []sql.Chunk
-	With      []WithSpec
+	// OutputInserted and OutputDeleted are SQL Server OUTPUT INSERTED and OUTPUT DELETED.
+	// The flags stay set when the column list is empty. This is not RETURNING.
+	OutputInserted    []sql.Chunk
+	OutputDeleted     []sql.Chunk
+	HasOutputInserted bool
+	HasOutputDeleted  bool
+	With              []WithSpec
 }
 
 // Assignment is one entry in a set. A nil Value binds NULL. An SQL fragment is rendered as written.
@@ -89,6 +99,10 @@ type DeleteSpec struct {
 	Limit     int
 	LimitSet  bool
 	Returning []sql.Chunk
+	// Output is SQL Server OUTPUT DELETED. HasOutput is set even when the column list is empty.
+	// This is not RETURNING.
+	Output    []sql.Chunk
+	HasOutput bool
 	With      []WithSpec
 }
 
@@ -117,6 +131,8 @@ type Insert[T any] struct {
 	sets          *setNode[T]
 	setWhere      sql.Chunk
 	returning     []Column[T]
+	output        []Column[T]
+	outputSet     bool
 	withs         []WithSpec
 	sel           *SelectSpec
 }
@@ -251,6 +267,17 @@ func (ins Insert[T]) Returning(cols ...Column[T]) Insert[T] {
 	return ins
 }
 
+// Output sets SQL Server OUTPUT INSERTED. A later call replaces the previous one.
+// Passing no columns uses every column of the insert table. This is not RETURNING.
+func (ins Insert[T]) Output(cols ...Column[T]) Insert[T] {
+	if len(cols) == 0 {
+		cols = columnsOf(ins.table)
+	}
+	ins.output = append([]Column[T](nil), cols...)
+	ins.outputSet = true
+	return ins
+}
+
 // Spec expands this chain. Values are restored to call order.
 func (ins Insert[T]) Spec() InsertSpec {
 	cols := ins.cols
@@ -263,6 +290,8 @@ func (ins Insert[T]) Spec() InsertSpec {
 		ColumnNames: columnNames(cols),
 		Encoders:    columnEncoders(cols),
 		Returning:   columnChunks(ins.returning),
+		Output:      columnChunks(ins.output),
+		HasOutput:   ins.outputSet,
 		With:        append([]WithSpec(nil), ins.withs...),
 		Select:      ins.sel,
 		Ignore:      ins.ignore,
@@ -326,18 +355,22 @@ type updateJoin struct {
 type Update[T any] struct {
 	table Table[T]
 	// setCols and setVals hold up to four assignments without a heap node.
-	setCols   [4]Column[T]
-	setVals   [4]any
-	nSets     int
-	sets      *setNode[T]
-	from      sql.Chunk
-	joins     *updateJoin
-	where     sql.Chunk
-	order     []sql.Chunk
-	limit     int
-	limitSet  bool
-	returning []Column[T]
-	withs     []WithSpec
+	setCols           [4]Column[T]
+	setVals           [4]any
+	nSets             int
+	sets              *setNode[T]
+	from              sql.Chunk
+	joins             *updateJoin
+	where             sql.Chunk
+	order             []sql.Chunk
+	limit             int
+	limitSet          bool
+	returning         []Column[T]
+	outputInserted    []Column[T]
+	outputDeleted     []Column[T]
+	outputInsertedSet bool
+	outputDeletedSet  bool
+	withs             []WithSpec
 }
 
 // NewUpdate starts an update. Callers write pg.Update.
@@ -429,6 +462,28 @@ func (u Update[T]) Returning(cols ...Column[T]) Update[T] {
 	return u
 }
 
+// OutputInserted sets the INSERTED columns of SQL Server OUTPUT. A later call replaces the previous one.
+// Passing no columns uses every column of the updated table. This is not RETURNING.
+func (u Update[T]) OutputInserted(cols ...Column[T]) Update[T] {
+	if len(cols) == 0 {
+		cols = columnsOf(u.table)
+	}
+	u.outputInserted = append([]Column[T](nil), cols...)
+	u.outputInsertedSet = true
+	return u
+}
+
+// OutputDeleted sets the DELETED columns of SQL Server OUTPUT. A later call replaces the previous one.
+// Passing no columns uses every column of the updated table. This is not RETURNING.
+func (u Update[T]) OutputDeleted(cols ...Column[T]) Update[T] {
+	if len(cols) == 0 {
+		cols = columnsOf(u.table)
+	}
+	u.outputDeleted = append([]Column[T](nil), cols...)
+	u.outputDeletedSet = true
+	return u
+}
+
 // Spec expands this chain. Set is restored to call order.
 func (u Update[T]) Spec() UpdateSpec {
 	sets := assignments(u.sets)
@@ -443,16 +498,20 @@ func (u Update[T]) Spec() UpdateSpec {
 		}
 	}
 	return UpdateSpec{
-		Table:     u.table,
-		Sets:      sets,
-		From:      u.from,
-		Joins:     updateJoins(u.joins),
-		Where:     u.where,
-		OrderBy:   append([]sql.Chunk(nil), u.order...),
-		Limit:     u.limit,
-		LimitSet:  u.limitSet,
-		Returning: columnChunks(u.returning),
-		With:      append([]WithSpec(nil), u.withs...),
+		Table:             u.table,
+		Sets:              sets,
+		From:              u.from,
+		Joins:             updateJoins(u.joins),
+		Where:             u.where,
+		OrderBy:           append([]sql.Chunk(nil), u.order...),
+		Limit:             u.limit,
+		LimitSet:          u.limitSet,
+		Returning:         columnChunks(u.returning),
+		OutputInserted:    columnChunks(u.outputInserted),
+		OutputDeleted:     columnChunks(u.outputDeleted),
+		HasOutputInserted: u.outputInsertedSet,
+		HasOutputDeleted:  u.outputDeletedSet,
+		With:              append([]WithSpec(nil), u.withs...),
 	}
 }
 
@@ -479,6 +538,8 @@ type Delete[T any] struct {
 	limit     int
 	limitSet  bool
 	returning []Column[T]
+	output    []Column[T]
+	outputSet bool
 	withs     []WithSpec
 }
 
@@ -549,6 +610,17 @@ func (d Delete[T]) Returning(cols ...Column[T]) Delete[T] {
 	return d
 }
 
+// Output sets SQL Server OUTPUT DELETED. A later call replaces the previous one.
+// Passing no columns uses every column of the deleted table. This is not RETURNING.
+func (d Delete[T]) Output(cols ...Column[T]) Delete[T] {
+	if len(cols) == 0 {
+		cols = columnsOf(d.table)
+	}
+	d.output = append([]Column[T](nil), cols...)
+	d.outputSet = true
+	return d
+}
+
 // Spec expands this chain.
 func (d Delete[T]) Spec() DeleteSpec {
 	return DeleteSpec{
@@ -560,6 +632,8 @@ func (d Delete[T]) Spec() DeleteSpec {
 		Limit:     d.limit,
 		LimitSet:  d.limitSet,
 		Returning: columnChunks(d.returning),
+		Output:    columnChunks(d.output),
+		HasOutput: d.outputSet,
 		With:      append([]WithSpec(nil), d.withs...),
 	}
 }
@@ -618,6 +692,21 @@ func columnNames[T any](cols []Column[T]) []string {
 	out := make([]string, len(cols))
 	for i, col := range cols {
 		out[i] = col.ColName()
+	}
+	return out
+}
+
+func columnsOf[T any](table Table[T]) []Column[T] {
+	if table == nil {
+		return nil
+	}
+	chunks := table.Columns()
+	out := make([]Column[T], 0, len(chunks))
+	for _, ch := range chunks {
+		col, ok := ch.(Column[T])
+		if ok && col != nil {
+			out = append(out, col)
+		}
 	}
 	return out
 }

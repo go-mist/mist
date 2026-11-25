@@ -16,13 +16,13 @@ jobs:
       # Integration tests start postgres:16-alpine and mysql:8.4 with testcontainers.
       # Packages stay in separate steps so they do not share a server.
       # SQLite uses a temporary file. The driver is in-process.
-      - run: go test -race -tags integration -count=1 -timeout 15m ./pg/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./dialect/pg/
       - run: go test -race -tags integration -count=1 -timeout 15m ./std/
-      - run: go test -race -tags integration -count=1 -timeout 15m ./mysql/
+      - run: go test -race -tags integration -count=1 -timeout 15m ./dialect/mysql/
       - run: go test -race -tags integration -count=1 -timeout 15m ./migrate/
       - run: go test -race -tags integration -count=1 -timeout 15m ./introspect/
       - run: go test -race -tags integration -count=1 -timeout 15m ./ddl/pg/
-      - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./sqlite/
+      - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./dialect/sqlite/
       - run: CGO_ENABLED=0 go test -tags integration -count=1 -timeout 15m ./ddl/sqlite/
       - run: go run ./cmd/mist generate -dir internal/schemafixture
       - run: go run ./cmd/mist generate -dir internal/mysqlfixture

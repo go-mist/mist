@@ -4,15 +4,51 @@ package migrate_test
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"sync"
 	"testing"
 
+	"github.com/go-mist/mist/dialect/mysql"
+	"github.com/go-mist/mist/dialect/sqlite"
 	"github.com/go-mist/mist/internal/testdb"
 	"github.com/go-mist/mist/migrate"
-	"github.com/go-mist/mist/mysql"
-	"github.com/go-mist/mist/sqlite"
 )
+
+//go:embed all:testdata/sqlite
+var sqliteMigrations embed.FS
+
+func TestSQLiteEmbed(t *testing.T) {
+	ctx := context.Background()
+	db := openSQLite(t, ctx, testdb.SQLiteDSN(t))
+	cfg := migrate.Config{FS: sqliteMigrations, Folder: "testdata/sqlite", Table: "m6lite_embed_migrations"}
+	applied, err := migrate.Run(ctx, sqlite.Migrator(db), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 1 {
+		t.Fatalf("applied = %d", applied)
+	}
+	var id int
+	if err := querySQLite(ctx, db, &id, "select id from m6lite_embed"); err != nil {
+		t.Fatal(err)
+	}
+	if id != 7 {
+		t.Fatalf("id = %d", id)
+	}
+	var name string
+	err = querySQLite(ctx, db, &name, "select name from sqlite_master where type = 'table' and name = ?", "m6lite_embed_down")
+	if err == nil {
+		t.Fatal("down.sql was applied")
+	}
+	again, err := migrate.Run(ctx, sqlite.Migrator(db), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != 0 {
+		t.Fatalf("second applied = %d", again)
+	}
+}
 
 func TestSQLiteMigrate(t *testing.T) {
 	ctx := context.Background()

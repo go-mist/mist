@@ -29,7 +29,7 @@ func TestThreeRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(folder, second.Name, "migration.sql"))
+	body, err := os.ReadFile(filepath.Join(folder, second.Name, "up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestThreeRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	posts, err := os.ReadFile(filepath.Join(folder, third.Name, "migration.sql"))
+	posts, err := os.ReadFile(filepath.Join(folder, third.Name, "up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestEditedMigrationFailsCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(folder, written.Name, "migration.sql")
+	path := filepath.Join(folder, written.Name, "up.sql")
 	if err := os.WriteFile(path, []byte("select 1;\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestCommutativeBranches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(both, extra.Name, "migration.sql"))
+	body, err := os.ReadFile(filepath.Join(both, extra.Name, "up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestMigrationsWithoutSnapshot(t *testing.T) {
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "migration.sql"), []byte("select 1;\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "up.sql"), []byte("select 1;\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Check(folder, usersV1()); err == nil || !strings.Contains(err.Error(), "snapshot.json") {
@@ -286,7 +286,7 @@ func copyMigrations(t *testing.T, src, dst string) {
 		if err := os.MkdirAll(to, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		for _, name := range []string{"migration.sql", "snapshot.json"} {
+		for _, name := range []string{"up.sql", "down.sql", "snapshot.json"} {
 			body, err := os.ReadFile(filepath.Join(src, entry.Name(), name))
 			if err != nil {
 				t.Fatal(err)

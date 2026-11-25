@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/go-mist/mist/mysql"
-	"github.com/go-mist/mist/mysql/codecs"
+	"github.com/go-mist/mist/dialect/mysql"
+	"github.com/go-mist/mist/dialect/mysql/codecs"
 	"github.com/go-mist/mist/sql"
 )
 

@@ -6,8 +6,9 @@ package history
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
+	"path"
 	"sort"
 
 	"github.com/go-mist/mist/schema"
@@ -27,11 +28,19 @@ type State struct {
 	Heads  []string
 }
 
-// Load reads snapshot.json from each migration directory.
-// A directory with migration.sql and no snapshot is an error.
+// Load reads snapshot.json from each migration directory on disk.
+// A directory with up.sql and no snapshot is an error.
 // A missing folder returns no snapshots.
 func Load(folder string) ([]Snapshot, error) {
-	snaps, _, err := readSnapshots(folder, false)
+	if folder == "" {
+		return nil, fmt.Errorf("open : no such file or directory")
+	}
+	return LoadFS(os.DirFS(folder))
+}
+
+// LoadFS reads snapshot.json from fsys. The root of fsys is the migrations directory.
+func LoadFS(fsys fs.FS) ([]Snapshot, error) {
+	snaps, _, err := readSnapshots(fsys, false)
 	return snaps, err
 }
 
@@ -41,7 +50,15 @@ func Conflicts(folder string) error {
 	if folder == "" {
 		return nil
 	}
-	snaps, err := relaxed(folder)
+	return ConflictsFS(os.DirFS(folder))
+}
+
+// ConflictsFS is Conflicts for an fs.FS rooted at the migrations directory.
+func ConflictsFS(fsys fs.FS) error {
+	if fsys == nil {
+		return nil
+	}
+	snaps, err := relaxed(fsys)
 	if err != nil || len(snaps) == 0 {
 		return err
 	}
@@ -95,8 +112,8 @@ func Resolve(snaps []Snapshot) (State, error) {
 	return State{Schema: merged, Heads: heads}, nil
 }
 
-func relaxed(folder string) ([]Snapshot, error) {
-	snaps, sawSnapshot, err := readSnapshots(folder, true)
+func relaxed(fsys fs.FS) ([]Snapshot, error) {
+	snaps, sawSnapshot, err := readSnapshots(fsys, true)
 	if err != nil || !sawSnapshot {
 		return nil, err
 	}
@@ -105,8 +122,8 @@ func relaxed(folder string) ([]Snapshot, error) {
 
 // readSnapshots lists migration directories. When allowSQLOnly is set and the folder has
 // no snapshot.json, SQL-only directories are left for migrate.Read.
-func readSnapshots(folder string, allowSQLOnly bool) ([]Snapshot, bool, error) {
-	entries, err := os.ReadDir(folder)
+func readSnapshots(fsys fs.FS, allowSQLOnly bool) ([]Snapshot, bool, error) {
+	entries, err := fs.ReadDir(fsys, ".")
 	if os.IsNotExist(err) {
 		return nil, false, nil
 	}
@@ -120,10 +137,10 @@ func readSnapshots(folder string, allowSQLOnly bool) ([]Snapshot, bool, error) {
 		if !entry.IsDir() || entry.Name() == "meta" {
 			continue
 		}
-		sqlPath := filepath.Join(folder, entry.Name(), "migration.sql")
-		snapPath := filepath.Join(folder, entry.Name(), "snapshot.json")
-		_, sqlErr := os.Stat(sqlPath)
-		_, snapErr := os.Stat(snapPath)
+		sqlPath := path.Join(entry.Name(), "up.sql")
+		snapPath := path.Join(entry.Name(), "snapshot.json")
+		_, sqlErr := fs.Stat(fsys, sqlPath)
+		_, snapErr := fs.Stat(fsys, snapPath)
 		if os.IsNotExist(sqlErr) && os.IsNotExist(snapErr) {
 			continue
 		}
@@ -139,9 +156,9 @@ func readSnapshots(folder string, allowSQLOnly bool) ([]Snapshot, bool, error) {
 		}
 		sawSnapshot = true
 		if os.IsNotExist(sqlErr) {
-			return nil, false, fmt.Errorf("ddl: %s/migration.sql is missing", entry.Name())
+			return nil, false, fmt.Errorf("ddl: %s/up.sql is missing", entry.Name())
 		}
-		raw, err := os.ReadFile(snapPath)
+		raw, err := fs.ReadFile(fsys, snapPath)
 		if err != nil {
 			return nil, false, err
 		}
