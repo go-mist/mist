@@ -43,9 +43,9 @@ func (c dmConn) SessionLock(ctx context.Context, schema, name string) (func() er
 	if c.db == nil || c.db.sqldb == nil {
 		return nil, fmt.Errorf("migrate: dm has no connection")
 	}
-	table := `"__drizzle_lock"`
+	table := `"__mist_lock"`
 	if schema != "" {
-		table = `"` + schema + `"."__drizzle_lock"`
+		table = `"` + schema + `"."__mist_lock"`
 	}
 	create := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ("name" VARCHAR(128) PRIMARY KEY)`, table)
 	if _, err := c.db.Exec(ctx, create); err != nil && !alreadyExists(err) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const lockTable = "__drizzle_lock"
+const lockTable = "__mist_lock"
 
 // engine is the SQL for one database this repository migrates.
 // pg, mysql, sqlite, oracle, mssql, and dm are the known names. A new database is added in this repository.
@@ -216,6 +216,10 @@ func (e engine) columnsSQL(schema, table string) (string, []any) {
 
 func (e engine) appliedSQL(schema, table string) string {
 	return fmt.Sprintf("select %s, %s from %s", e.quote("hash"), e.quote("name"), e.qual(schema, table))
+}
+
+func (e engine) deleteSQL(schema, table string) string {
+	return fmt.Sprintf("delete from %s where %s = %s", e.qual(schema, table), e.quote("name"), e.ph(1))
 }
 
 func (e engine) insertSQL(schema, table string) string {

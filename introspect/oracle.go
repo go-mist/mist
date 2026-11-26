@@ -9,7 +9,7 @@ import (
 )
 
 // ReadOracle reads tables owned by owner. An empty owner is the current schema.
-// The migration bookkeeping tables __drizzle_migrations and __drizzle_lock are skipped.
+// The migration bookkeeping tables __mist_migrations and __mist_lock are skipped.
 func ReadOracle(ctx context.Context, q Querier, owner string) (schema.Schema, error) {
 	if q == nil {
 		return schema.Schema{}, fmt.Errorf("introspect: missing connection")

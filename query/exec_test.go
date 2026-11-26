@@ -69,6 +69,48 @@ func TestSelectWholeRowScan(t *testing.T) {
 	}
 }
 
+func TestUpdateAndDeleteRequireWhere(t *testing.T) {
+	ctx := context.Background()
+	db := &fakeDB{}
+	_, err := pg.Update(schemafixture.Users).Set(schemafixture.Users.Name, "bea").Exec(ctx, db)
+	if err == nil || err.Error() != "query: update has no where" {
+		t.Fatal(err)
+	}
+	_, err = pg.Delete(schemafixture.Users).Exec(ctx, db)
+	if err == nil || err.Error() != "query: delete has no where" {
+		t.Fatal(err)
+	}
+	if _, err := pg.Update(schemafixture.Users).Set(schemafixture.Users.Name, "bea").AllRows().Exec(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.Delete(schemafixture.Users).AllRows().Exec(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pg.Update(schemafixture.Users).Set(schemafixture.Users.Name, "bea").Prepare(ctx, db); err == nil {
+		t.Fatal("prepare ran an update with no where")
+	}
+}
+
+func TestVersionConflict(t *testing.T) {
+	ctx := context.Background()
+	db := &fakeDB{countSet: true}
+	_, err := pg.Update(schemafixture.Users).
+		Set(schemafixture.Users.Name, "bea").
+		Version(schemafixture.Users.ID, int64(3)).
+		Exec(ctx, db)
+	if !errors.Is(err, query.ErrVersionConflict) {
+		t.Fatal(err)
+	}
+	db.countSet = false
+	n, err := pg.Update(schemafixture.Users).
+		Set(schemafixture.Users.Name, "bea").
+		Version(schemafixture.Users.ID, int64(3)).
+		Exec(ctx, db)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+}
+
 func TestReturningOne(t *testing.T) {
 	db := &fakeDB{rows: [][]any{{int64(4), "cea"}}}
 	got, err := pg.Insert(schemafixture.Users).
@@ -92,6 +134,8 @@ type fakeDB struct {
 	rows     [][]any
 	prepared []string
 	lastArgs []any
+	affected int64
+	countSet bool
 }
 
 func (f *fakeDB) Query(context.Context, string, ...any) (query.Rows, error) {
@@ -99,6 +143,9 @@ func (f *fakeDB) Query(context.Context, string, ...any) (query.Rows, error) {
 }
 
 func (f *fakeDB) Exec(context.Context, string, ...any) (int64, error) {
+	if f.countSet {
+		return f.affected, nil
+	}
 	return 1, nil
 }
 
@@ -118,6 +165,9 @@ func (s *fakeStmt) Query(_ context.Context, args ...any) (query.Rows, error) {
 
 func (s *fakeStmt) Exec(_ context.Context, args ...any) (int64, error) {
 	s.db.lastArgs = args
+	if s.db.countSet {
+		return s.db.affected, nil
+	}
 	return 1, nil
 }
 

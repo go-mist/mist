@@ -3,6 +3,7 @@ package sqlite_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-mist/mist"
@@ -76,5 +77,29 @@ func TestQueryLog(t *testing.T) {
 		if log.lines[i] != want[i] {
 			t.Fatalf("%d\n got %s\nwant %s", i, log.lines[i], want[i])
 		}
+	}
+}
+
+func TestQueryDuration(t *testing.T) {
+	ctx := context.Background()
+	var lines []string
+	db, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "dur.db"), sqlite.WithLogger(logger.Timed{
+		Writer: writerFunc(func(message string) { lines = append(lines, message) }),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(ctx, `select 1`); err != nil {
+		t.Fatal(err)
+	}
+	var saw bool
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Duration: ") && strings.Contains(line, "Query: select 1") {
+			saw = true
+		}
+	}
+	if !saw {
+		t.Fatalf("%v", lines)
 	}
 }

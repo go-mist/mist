@@ -6,6 +6,9 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -17,6 +20,85 @@ import (
 
 //go:embed all:testdata/sqlite
 var sqliteMigrations embed.FS
+
+func TestSQLiteDown(t *testing.T) {
+	ctx := context.Background()
+	db := openSQLite(t, ctx, testdb.SQLiteDSN(t))
+	dir := t.TempDir()
+	writeMig(t, dir, "20250601000000_a", "create table m6down_a (id int);")
+	writeDown(t, dir, "20250601000000_a", "drop table m6down_a;")
+	writeMig(t, dir, "20250602000000_b", "create table m6down_b (id int);")
+	writeDown(t, dir, "20250602000000_b", "drop table m6down_b;")
+	writeMig(t, dir, "20250603000000_c", "create table m6down_c (id int);")
+	writeDown(t, dir, "20250603000000_c", "drop table m6down_c;")
+	cfg := migrate.Config{Folder: dir, Table: "m6lite_down_migrations"}
+	conn := sqlite.Migrator(db)
+	applied, err := migrate.Run(ctx, conn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 3 {
+		t.Fatalf("applied = %d", applied)
+	}
+	n, err := migrate.DownTo(ctx, conn, cfg, "20250601000000_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("down-to = %d", n)
+	}
+	if err := querySQLite(ctx, db, new(int), "select count(*) from m6down_a"); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"m6down_b", "m6down_c"} {
+		var name string
+		err := querySQLite(ctx, db, &name, "select name from sqlite_master where type = 'table' and name = ?", table)
+		if err == nil {
+			t.Fatalf("%s still exists", table)
+		}
+	}
+	n, err = migrate.Down(ctx, conn, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("down = %d", n)
+	}
+	var name string
+	err = querySQLite(ctx, db, &name, "select name from sqlite_master where type = 'table' and name = ?", "m6down_a")
+	if err == nil {
+		t.Fatal("m6down_a still exists")
+	}
+	n, err = migrate.Down(ctx, conn, cfg)
+	if err != nil || n != 0 {
+		t.Fatalf("second down = %d %v", n, err)
+	}
+
+	place := t.TempDir()
+	writeMig(t, place, "20250604000000_hold", "create table m6down_hold (id int);")
+	writeDown(t, place, "20250604000000_hold", migrate.DownPlaceholder)
+	hold := migrate.Config{Folder: place, Table: "m6lite_down_hold"}
+	if _, err := migrate.Run(ctx, conn, hold); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := migrate.Down(ctx, conn, hold); err == nil || !strings.Contains(err.Error(), "no down.sql") {
+		t.Fatal(err)
+	}
+	var rows int
+	if err := querySQLite(ctx, db, &rows, `select count(*) from "m6lite_down_hold"`); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("placeholder down removed the row: %d", rows)
+	}
+}
+
+func writeDown(t *testing.T, root, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(root, name, "down.sql"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestSQLiteEmbed(t *testing.T) {
 	ctx := context.Background()

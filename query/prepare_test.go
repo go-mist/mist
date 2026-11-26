@@ -152,3 +152,51 @@ func TestPreparedReturning(t *testing.T) {
 		t.Fatalf("args %#v", db.lastArgs)
 	}
 }
+
+func TestPreparedVersionConflict(t *testing.T) {
+	ctx := context.Background()
+	db := &fakeDB{countSet: true}
+	stmt, err := pg.Update(schemafixture.Users).
+		Set(schemafixture.Users.Name, sql.NewPlaceholder("name")).
+		Version(schemafixture.Users.ID, int64(3)).
+		Prepare(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stmt.Exec(ctx, map[string]any{"name": "bea"})
+	if !errors.Is(err, query.ErrVersionConflict) {
+		t.Fatal(err)
+	}
+	if len(db.prepared) != 1 || !strings.Contains(db.prepared[0], `"id" = ("users"."id" +`) {
+		t.Fatalf("sql = %s", db.prepared)
+	}
+}
+
+func TestExecBatch(t *testing.T) {
+	ctx := context.Background()
+	db := &fakeDB{}
+	stmt, err := pg.Insert(schemafixture.Users).
+		Columns(schemafixture.Users.ID, schemafixture.Users.Name).
+		Values(sql.NewPlaceholder("id"), sql.NewPlaceholder("name")).
+		Prepare(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := stmt.ExecBatch(ctx, []map[string]any{
+		{"id": int64(1), "name": "ada"},
+		{"id": int64(2), "name": "bea"},
+	})
+	if err != nil || n != 2 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if len(db.prepared) != 1 {
+		t.Fatalf("prepared %d times", len(db.prepared))
+	}
+	if len(db.lastArgs) != 2 || db.lastArgs[0] != int64(2) || db.lastArgs[1] != "bea" {
+		t.Fatalf("args %#v", db.lastArgs)
+	}
+	empty, err := stmt.ExecBatch(ctx, nil)
+	if err != nil || empty != 0 {
+		t.Fatalf("empty n=%d err=%v", empty, err)
+	}
+}

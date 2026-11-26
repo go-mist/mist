@@ -1,6 +1,6 @@
 # mist
 
-SQL query builder for Go. PostgreSQL, MySQL, SQLite, Oracle, SQL Server, and Dameng. Each dialect lives under `dialect/`: `github.com/go-mist/mist/dialect/pg`, `dialect/mysql`, `dialect/sqlite`, `dialect/oracle`, `dialect/mssql`, and `dialect/dm`. The `mysql` package also covers MariaDB. The `pg` package also covers HighGo: same `$1` placeholders, double quotes, `returning`, `on conflict`, and `lateral`. Connect with `pg.Open` and a PostgreSQL URL on port `5866`. pgx does not speak SM3 authentication, so a server that requires it will fail at connect. These statements have not been run on a HighGo server. KingbaseES in the build tested here also uses `pg.Open`: V008R003C002B0320, port `54321`, user `SYSTEM`, `md5`. `returning`, `on conflict`, `with recursive`, and `$1` ran. On that server `'A' = 'a'` is true. `sm3` was not tested. SQLite is compiled into the binary, so `CGO_ENABLED=0` is enough. Oracle runs single-table changes, joins, `group by`, `having`, `distinct`, `with`, set operations, `for update`, and `insert select`. `returning` and `on conflict` are rejected. SQL Server uses `mssql`: brackets, `@p1`, `TOP`, `OUTPUT`, and `OFFSET` / `FETCH`. `returning` stays an error and is not rewritten as `OUTPUT`. `on conflict` and `for update` are rejected there too. Dameng uses `dm`: double quotes, `?`, `LIMIT` / `OFFSET`, and `WITH` (the `RECURSIVE` keyword is rejected). The driver is the pure Go module `gitee.com/chunanyong/dm`. `returning` stays an error and is not rewritten as `RETURNING INTO`. `on conflict` is not rewritten as `MERGE`. `FindMany` is not implemented for Dameng. Joins, grouping, `distinct`, `with`, set operations, `limit` / `offset`, `for update`, `insert select`, and a transaction have been run on DM8. Migration, `ddl`, and `push` have not.
+SQL query builder for Go. PostgreSQL, MySQL, SQLite, Oracle, SQL Server, and Dameng. Each dialect lives under `dialect/`: `github.com/go-mist/mist/dialect/pg`, `dialect/mysql`, `dialect/sqlite`, `dialect/oracle`, `dialect/mssql`, and `dialect/dm`. The `mysql` package also covers MariaDB. The `pg` package also covers HighGo: same `$1` placeholders, double quotes, `returning`, `on conflict`, and `lateral`. Connect with `pg.Open` and a PostgreSQL URL on port `5866`. pgx does not speak SM3 authentication, so a server that requires it will fail at connect. These statements have not been run on a HighGo server. KingbaseES in the build tested here also uses `pg.Open`: V008R003C002B0320, port `54321`, user `SYSTEM`, `md5`. `returning`, `on conflict`, `with recursive`, and `$1` ran. On that server `'A' = 'a'` is true. `sm3` was not tested. SQLite is compiled into the binary, so `CGO_ENABLED=0` is enough. Oracle runs single-table changes, joins, `group by`, `having`, `distinct`, `with`, set operations, `for update`, and `insert select`. `returning` and `on conflict` are rejected. SQL Server uses `mssql`: brackets, `@p1`, `TOP`, `OUTPUT`, and `OFFSET` / `FETCH`. `returning` stays an error and is not rewritten as `OUTPUT`. `on conflict` and `for update` are rejected there too. Dameng uses `dm`: double quotes, `?`, `LIMIT` / `OFFSET`, and `WITH` (the `RECURSIVE` keyword is rejected). The driver is the pure Go module `gitee.com/chunanyong/dm`. `returning` stays an error and is not rewritten as `RETURNING INTO`. `on conflict` is not rewritten as `MERGE`. `FindMany` on Dameng is a correlated subquery. This server has no `LATERAL` and no `JSON_ARRAYAGG`, so each nested value is concatenated and collected with `LISTAGG`. See ADR-0015. Joins, grouping, `distinct`, `with`, set operations, `limit` / `offset`, `for update`, `insert select`, and a transaction have been run on DM8. Migration, `ddl`, and `push` have not.
 
 ## Install
 
@@ -48,7 +48,7 @@ if err != nil {
 defer db.Close()
 ```
 
-HighGo shares `pg.Open` and a PostgreSQL URL, such as `postgres://highgo:pass@127.0.0.1:5866/highgo?sslmode=disable`. MySQL and MariaDB share `mysql.Open` and a [go-sql-driver](https://github.com/go-sql-driver/mysql) DSN, such as `user:pass@tcp(127.0.0.1:3306)/app`. `FindMany` writes `LATERAL`, which current MariaDB rejects. A MariaDB `JSON` column reads back as `longtext` plus a `json_valid` check, so that diff is not empty. SQLite takes a file path or `:memory:`. Oracle takes a [go-ora](https://github.com/sijms/go-ora) URL, such as `oracle://user:pass@host:1521/service`. SQL Server takes a [go-mssqldb](https://github.com/microsoft/go-mssqldb) URL, such as `sqlserver://user:pass@host:1433?database=app`. Dameng takes a URL such as `dm://user:pass@127.0.0.1:5236`. `pg.Open`, `mysql.Open`, `sqlite.Open`, `oracle.Open`, `mssql.Open`, and `dm.Open` each return their own pool, and that pool implements `mist.DB`.
+HighGo shares `pg.Open` and a PostgreSQL URL, such as `postgres://highgo:pass@127.0.0.1:5866/highgo?sslmode=disable`. MySQL and MariaDB share `mysql.Open` and a [go-sql-driver](https://github.com/go-sql-driver/mysql) DSN, such as `user:pass@tcp(127.0.0.1:3306)/app`. `FindMany` is a correlated subquery with `json_arrayagg`, which current MariaDB accepts. A MariaDB `JSON` column reads back as `longtext` plus a `json_valid` check, so that diff is not empty. SQLite takes a file path or `:memory:`. Oracle takes a [go-ora](https://github.com/sijms/go-ora) URL, such as `oracle://user:pass@host:1521/service`. SQL Server takes a [go-mssqldb](https://github.com/microsoft/go-mssqldb) URL, such as `sqlserver://user:pass@host:1433?database=app`. Dameng takes a URL such as `dm://user:pass@127.0.0.1:5236`. `pg.Open`, `mysql.Open`, `sqlite.Open`, `oracle.Open`, `mssql.Open`, and `dm.Open` each return their own pool, and that pool implements `mist.DB`.
 
 ```go
 db, err := mysql.Open(ctx, dsn)
@@ -75,6 +75,8 @@ users, err := pg.Select(Users.ID, Users.Name).
 
 `One` returns `query.ErrNoRows` when the result is empty and `query.ErrManyRows` when it is not unique. `Take` returns the first row and ignores the rest.
 
+`page.Fetch` takes a `page.Request` and returns a `page.Result`. `current` and `size` are the input. Zero means page 1 and 10 rows. The result carries `records`, `total`, `size`, `current`, and `pages`. Fetch runs `count(*)`, then the same select with `limit` and `offset`. `noCount` skips the count, and `total` and `pages` stay 0. `page.FetchAfter` reads the next window after one column's last value and does not count. SQL Server and Oracle still need `OrderBy` on an offset query. An HTTP handler decodes the request into `page.Request`; this package does not read the HTTP request.
+
 ## Insert
 
 ```go
@@ -95,6 +97,10 @@ n, err := pg.Update(Users).
 	Exec(ctx, db)
 ```
 
+`Exec`, `All`, `One`, and `Prepare` return an error when `Where` is missing. `AllRows` runs the statement against every row.
+
+`Version(Users.ID, current)` adds `set id = id + 1` and `id = current`. Zero rows changed is `query.ErrVersionConflict`.
+
 ## Delete
 
 ```go
@@ -102,6 +108,14 @@ n, err := pg.Delete(Users).
 	Where(op.Eq(Users.ID, int64(1))).
 	Exec(ctx, db)
 ```
+
+A delete with no `Where` is refused the same way. `AllRows` is the explicit full-table delete.
+
+`Prepare` renders an insert once. `ExecBatch` runs that statement once per row. Oracle rejects a multi-row `VALUES` list, so repeated execution is the batch there.
+
+`Users.As("people")` copies the generated table and column names. `id.NewSnowflake` and `id.NewUUID` return values you pass to `Values`.
+
+`logger.Timed` records how long the driver call took. A `Logger` that also implements `LogDuration` receives the same timing. `Default` does not.
 
 ## Transactions
 
@@ -121,7 +135,7 @@ err := db.Tx(ctx, func(tx mist.Tx) error {
 
 `migrate.Run` applies a folder on PostgreSQL, HighGo, MySQL, MariaDB, SQLite, Oracle, SQL Server, and Dameng. HighGo uses `-driver pg`. MariaDB uses `-driver mysql`. SQL Server uses `-driver mssql` and keeps the migration table in `dbo` unless `-schema` says otherwise. Dameng uses `-driver dm`.
 
-PostgreSQL stores `drizzle.__drizzle_migrations` and takes `pg_advisory_xact_lock` inside the transaction. MySQL creates a database of that name and the same table, and holds `GET_LOCK` until the call returns. MySQL DDL commits the current transaction, so a failed migration can leave earlier statements applied. SQLite keeps `__drizzle_migrations` in the main database, rejects a schema name, and rolls the batch back with the transaction.
+PostgreSQL stores `mist.__mist_migrations` and takes `pg_advisory_xact_lock` inside the transaction. MySQL creates a database of that name and the same table, and holds `GET_LOCK` until the call returns. MySQL DDL commits the current transaction, so a failed migration can leave earlier statements applied. SQLite keeps `__mist_migrations` in the main database, rejects a schema name, and rolls the batch back with the transaction.
 
 Each migration is a directory. `snapshot.json` is the schema after that migration. A later `ddl -write` adds a new directory and leaves the old one unchanged. Two latest directories that change different columns, indexes, or constraints are both parents of the next migration. A shared object stops `ddl`, `check`, and `migrate`.
 
@@ -131,7 +145,7 @@ migrations/20261123135846_init/down.sql
 migrations/20261123135846_init/snapshot.json
 ```
 
-`up.sql` is what `migrate.Run` applies. `down.sql` is reserved and is not applied. The hash is the bytes of `up.sql`.
+`up.sql` is what `migrate.Run` applies. `migrate.Down` runs the latest applied `down.sql` and deletes that row. `migrate.DownTo` keeps the named migration and rolls back every later one. An empty name rolls all of them back. `down.sql` is handwritten. A placeholder, or a file with no statements, is refused and the row stays. The hash is the bytes of `up.sql`. Each down migration runs in its own transaction.
 
 ```
 mist ddl -dir . -migrations migrations -write -name init
@@ -139,6 +153,9 @@ mist migrate -migrations migrations
 mist migrate -driver mysql -migrations migrations
 mist migrate -driver sqlite -dsn app.db -migrations migrations
 mist migrate -driver oracle -migrations migrations
+mist down -migrations migrations
+mist down -migrations migrations -to 20261123135846_init
+mist down -migrations migrations -all
 ```
 
 `-dsn` overrides the environment. PostgreSQL reads `DRIZZLE_PG_DSN`. MySQL reads `DRIZZLE_MYSQL_DSN`. Oracle reads `ORACLE_DSN`. SQL Server reads `MSSQL_DSN`. Dameng reads `DM_DSN`. SQLite takes the file path in `-dsn`. From Go:
@@ -163,7 +180,7 @@ applied, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{
 
 `mysql.Migrator`, `sqlite.Migrator`, `oracle.Migrator`, `mssql.Migrator`, and `dm.Migrator` are the other connections. Oracle keeps the migration table in the current user and does not wrap DDL in a transaction. Dameng does the same: an empty schema is the current user, and DDL is not wrapped in a transaction. The lock is a row lock on another connection. MySQL and MariaDB take the lock with `GET_LOCK` on the connection. SQL Server takes `sp_getapplock` inside the migration transaction. SQLite has no schema; the migration table is in the current database.
 
-`mist ddl -dialect` is `pg`, `mysql`, `sqlite`, `oracle`, `mssql`, or `dm`. `mist check` compares the folder with the snapshot. `mist push -driver` prints the SQL that would change that database, and applies it with `--force`. Each driver reads its own catalog. A SQL Server `json` column is `nvarchar(max)` plus `isjson(column) = 1`. `FindMany` uses `OUTER APPLY` and `FOR JSON`. `Select.Top` writes `SELECT TOP (n)`. `Insert.Output`, `Update.OutputInserted`, `Update.OutputDeleted`, and `Delete.Output` write `OUTPUT INSERTED` or `OUTPUT DELETED`. Dameng push reads `ALL_TAB_COLUMNS` and does not wrap the apply in a transaction. `FindMany` is not available on `dm`.
+`mist ddl -dialect` is `pg`, `mysql`, `sqlite`, `oracle`, `mssql`, or `dm`. `mist check` compares the folder with the snapshot. `mist push -driver` prints the SQL that would change that database, and applies it with `--force`. Each driver reads its own catalog. A SQL Server `json` column is `nvarchar(max)` plus `isjson(column) = 1`. `FindMany` uses `OUTER APPLY` and `FOR JSON`. `Select.Top` writes `SELECT TOP (n)`. `Insert.Output`, `Update.OutputInserted`, `Update.OutputDeleted`, and `Delete.Output` write `OUTPUT INSERTED` or `OUTPUT DELETED`. Dameng push reads `ALL_TAB_COLUMNS` and does not wrap the apply in a transaction. `dm.FindMany` builds the nested JSON with `LISTAGG`, not `LATERAL`.
 
 ## Example
 

@@ -2,6 +2,7 @@ package relation
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -52,6 +53,26 @@ func TestFillNestedJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(user.Posts, want) {
 		t.Fatalf("posts = %#v", user.Posts)
+	}
+}
+
+func TestFillNamesTheColumn(t *testing.T) {
+	s := mapSchema(t)
+	user := &mapUser{}
+	sel := Selection{Columns: []string{"id"}}
+	err := s.Fill("users", sel, user, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := Selection{Rels: []RelSelection{{
+		Name:   "posts",
+		Target: "posts",
+		Many:   true,
+		Inner:  Selection{Columns: []string{"id"}},
+	}}}
+	err = s.Fill("users", bad, user, [][]byte{[]byte(`[{"id":"nope"}]`)})
+	if err == nil || !strings.Contains(err.Error(), "table posts column id expected int64") {
+		t.Fatal(err)
 	}
 }
 

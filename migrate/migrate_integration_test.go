@@ -86,7 +86,7 @@ func TestMigrate(t *testing.T) {
 			t.Fatalf("second applied = %d", again)
 		}
 		var created int64
-		if err := queryOne(ctx, db, &created, `select created_at from "m6twenty"."__drizzle_migrations" where name = $1`, "20240101120000_step"); err != nil {
+		if err := queryOne(ctx, db, &created, `select created_at from "m6twenty"."__mist_migrations" where name = $1`, "20240101120000_step"); err != nil {
 			t.Fatal(err)
 		}
 		want, err := migrate.FolderMillis("20240101120000_step")
@@ -168,7 +168,7 @@ func TestMigrate(t *testing.T) {
 			}
 		}
 		var n int
-		if err := queryOne(ctx, db, &n, `select count(*) from "m6roll"."__drizzle_migrations"`); err != nil {
+		if err := queryOne(ctx, db, &n, `select count(*) from "m6roll"."__mist_migrations"`); err != nil {
 			t.Fatal(err)
 		}
 		if n != 0 {
@@ -182,7 +182,7 @@ func TestMigrate(t *testing.T) {
 		if _, err := db.Exec(ctx, `create schema m6old`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Exec(ctx, `create table m6old.__drizzle_migrations (
+		if _, err := db.Exec(ctx, `create table m6old.__mist_migrations (
 			id serial primary key,
 			hash text not null,
 			created_at bigint
@@ -193,7 +193,7 @@ func TestMigrate(t *testing.T) {
 		writeMig(t, dir, "20240501000000_old", "select 1;")
 		_, err := migrate.Run(ctx, pg.Migrator(db), migrate.Config{Folder: dir, Schema: schema})
 		old, ok := err.(*migrate.OldTableError)
-		if !ok || old.Table != "__drizzle_migrations" {
+		if !ok || old.Table != "__mist_migrations" {
 			t.Fatalf("error = %v", err)
 		}
 	})

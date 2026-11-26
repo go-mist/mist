@@ -24,4 +24,4 @@ go run . serve
 | `POST` | `/tasks/{id}/done` | |
 | `DELETE` | `/tasks/{id}` | |
 
-`schema.go` is the table. `go generate` writes `schema_gen.go`. `migrations/20261123135846_init/` holds `up.sql`, `down.sql`, and `snapshot.json`. `migrations/mysql/20261124110000_init/` holds `up.sql` and `down.sql`. `down.sql` is reserved and is not applied. Each `add` and `done` writes the task and a `task_events` row in one transaction. `delete` removes the events, then the task, and rolls back when the task is missing.
+`schema.go` is the table. `go generate` writes `schema_gen.go`. `migrations/20261123135846_init/` holds `up.sql`, `down.sql`, and `snapshot.json`. `migrations/mysql/20261124110000_init/` holds `up.sql` and `down.sql`. `down.sql` is still the placeholder, so `migrate down` refuses it until that file is replaced. Each `add` and `done` writes the task and a `task_events` row in one transaction. `delete` removes the events, then the task, and rolls back when the task is missing.

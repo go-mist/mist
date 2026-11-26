@@ -326,6 +326,53 @@ func TestUpdateFork(t *testing.T) {
 	}
 }
 
+func TestTableAs(t *testing.T) {
+	aliased := schemafixture.Users.As("people")
+	if schemafixture.Users.SQLName != "users" || schemafixture.Users.ID.Table != "users" {
+		t.Fatal("As changed the original table")
+	}
+	got, err := pg.Select(aliased.Name).From(aliased).Where(op.Eq(aliased.ID, int64(1))).SQL(pg.Dialect{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `select "people"."name" from "people" where "people"."id" = $1`
+	if got.SQL != want {
+		t.Fatalf("sql = %s", got.SQL)
+	}
+	if aliased.SQLName != "people" || aliased.Name.Table != "people" || aliased.ID.Table != "people" {
+		t.Fatalf("alias = %#v", aliased)
+	}
+}
+
+func TestVersionSQL(t *testing.T) {
+	got, err := pg.Update(schemafixture.Users).
+		Set(schemafixture.Users.Name, "bea").
+		Version(schemafixture.Users.ID, int64(3)).
+		Where(op.Eq(schemafixture.Users.ID, int64(7))).
+		SQL(pg.Dialect{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `update "users" set "name" = $1, "id" = ("users"."id" + $2) where (("users"."id" = $3) and ("users"."id" = $4))`
+	if got.SQL != want {
+		t.Fatalf("sql = %s", got.SQL)
+	}
+	if len(got.Params) != 4 || got.Params[0] != "bea" || got.Params[1] != 1 || got.Params[2] != int64(7) || got.Params[3] != int64(3) {
+		t.Fatalf("params = %#v", got.Params)
+	}
+
+	only, err := pg.Update(schemafixture.Users).
+		Set(schemafixture.Users.Name, "bea").
+		Version(schemafixture.Users.ID, int64(3)).
+		SQL(pg.Dialect{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if only.SQL != `update "users" set "name" = $1, "id" = ("users"."id" + $2) where "users"."id" = $3` {
+		t.Fatalf("sql = %s", only.SQL)
+	}
+}
+
 func TestDeleteWhereAndReturning(t *testing.T) {
 	got, err := pg.Delete(schemafixture.Users).
 		Where(op.Eq(schemafixture.Users.ID, 7)).

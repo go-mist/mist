@@ -85,7 +85,7 @@ func (db *DB) Query(ctx context.Context, sql string, args ...any) (query.Rows, e
 	if db.pool == nil {
 		return nil, errors.New("pg: no connection pool")
 	}
-	logger.Log(db.logger, sql, args)
+	defer logger.Start(db.logger, sql, args)()
 	return db.pool.Query(ctx, sql, args...)
 }
 
@@ -94,7 +94,7 @@ func (db *DB) Exec(ctx context.Context, sql string, args ...any) (int64, error) 
 	if db.pool == nil {
 		return 0, errors.New("pg: no connection pool")
 	}
-	logger.Log(db.logger, sql, args)
+	defer logger.Start(db.logger, sql, args)()
 	tag, err := db.pool.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, err
@@ -124,7 +124,7 @@ func (t *Tx) Query(ctx context.Context, sql string, args ...any) (query.Rows, er
 	if t.tx == nil {
 		return nil, errors.New("pg: no transaction")
 	}
-	logger.Log(t.logger, sql, args)
+	defer logger.Start(t.logger, sql, args)()
 	return t.tx.Query(ctx, sql, args...)
 }
 
@@ -133,7 +133,7 @@ func (t *Tx) Exec(ctx context.Context, sql string, args ...any) (int64, error) {
 	if t.tx == nil {
 		return 0, errors.New("pg: no transaction")
 	}
-	logger.Log(t.logger, sql, args)
+	defer logger.Start(t.logger, sql, args)()
 	tag, err := t.tx.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, err
@@ -188,12 +188,12 @@ type poolStmt struct {
 }
 
 func (s *poolStmt) Query(ctx context.Context, args ...any) (query.Rows, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	return s.pool.Query(ctx, s.sql, args...)
 }
 
 func (s *poolStmt) Exec(ctx context.Context, args ...any) (int64, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	tag, err := s.pool.Exec(ctx, s.sql, args...)
 	if err != nil {
 		return 0, err
@@ -212,12 +212,12 @@ type txStmt struct {
 }
 
 func (s *txStmt) Query(ctx context.Context, args ...any) (query.Rows, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	return s.tx.Query(ctx, s.name, args...)
 }
 
 func (s *txStmt) Exec(ctx context.Context, args ...any) (int64, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	tag, err := s.tx.Exec(ctx, s.name, args...)
 	if err != nil {
 		return 0, err

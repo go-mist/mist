@@ -52,6 +52,8 @@ func main() {
 		check(os.Args[2:])
 	case "migrate":
 		apply(os.Args[2:])
+	case "down":
+		downCmd(os.Args[2:])
 	case "push":
 		push(os.Args[2:])
 	default:
@@ -130,50 +132,106 @@ func check(args []string) {
 }
 
 func apply(args []string) {
-	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
+	flags := parseMigrate("migrate", args)
+	ctx := context.Background()
+	conn, closeConn, err := openMigrate(ctx, flags.driver, flags.dsn)
+	if err != nil {
+		fail(err)
+	}
+	defer closeConn()
+	applied, err := migrate.Run(ctx, conn, flags.config())
+	if err != nil {
+		fail(err)
+	}
+	fmt.Println(applied)
+}
+
+func downCmd(args []string) {
+	fs := flag.NewFlagSet("down", flag.ExitOnError)
+	migrations := fs.String("migrations", "", "migration folder")
+	driver := fs.String("driver", "pg", "pg, mysql, sqlite, oracle, mssql, or dm")
+	dsn := fs.String("dsn", "", "connection string")
+	schemaName := fs.String("schema", "", "schema of the migration table")
+	table := fs.String("table", "", "migration table")
+	to := fs.String("to", "", "roll back until this migration remains applied")
+	all := fs.Bool("all", false, "roll back every applied migration")
+	_ = fs.Parse(args)
+	flags, err := finishMigrate(*migrations, *driver, *dsn, *schemaName, *table)
+	if err != nil {
+		fail(err)
+	}
+	if *all && *to != "" {
+		fail(fmt.Errorf("down: -all and -to cannot both be set"))
+	}
+	ctx := context.Background()
+	conn, closeConn, err := openMigrate(ctx, flags.driver, flags.dsn)
+	if err != nil {
+		fail(err)
+	}
+	defer closeConn()
+	var n int
+	if *all || *to != "" {
+		n, err = migrate.DownTo(ctx, conn, flags.config(), *to)
+	} else {
+		n, err = migrate.Down(ctx, conn, flags.config())
+	}
+	if err != nil {
+		fail(err)
+	}
+	fmt.Println(n)
+}
+
+type migrateOpts struct {
+	migrations string
+	driver     string
+	dsn        string
+	schema     string
+	table      string
+}
+
+func (o migrateOpts) config() migrate.Config {
+	return migrate.Config{Folder: o.migrations, Schema: o.schema, Table: o.table}
+}
+
+func parseMigrate(name string, args []string) migrateOpts {
+	fs := flag.NewFlagSet(name, flag.ExitOnError)
 	migrations := fs.String("migrations", "", "migration folder")
 	driver := fs.String("driver", "pg", "pg, mysql, sqlite, oracle, mssql, or dm")
 	dsn := fs.String("dsn", "", "connection string")
 	schemaName := fs.String("schema", "", "schema of the migration table")
 	table := fs.String("table", "", "migration table")
 	_ = fs.Parse(args)
-	if *migrations == "" {
-		fail(fmt.Errorf("migrate: -migrations is required"))
+	opts, err := finishMigrate(*migrations, *driver, *dsn, *schemaName, *table)
+	if err != nil {
+		fail(err)
 	}
-	if *dsn == "" {
-		switch *driver {
+	return opts
+}
+
+func finishMigrate(migrations, driver, dsn, schemaName, table string) (migrateOpts, error) {
+	if migrations == "" {
+		return migrateOpts{}, fmt.Errorf("migrate: -migrations is required")
+	}
+	if dsn == "" {
+		switch driver {
 		case "mysql":
-			*dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
+			dsn = os.Getenv("DRIZZLE_MYSQL_DSN")
 		case "oracle":
-			*dsn = os.Getenv("ORACLE_DSN")
+			dsn = os.Getenv("ORACLE_DSN")
 		case "mssql":
-			*dsn = os.Getenv("MSSQL_DSN")
+			dsn = os.Getenv("MSSQL_DSN")
 		case "dm":
-			*dsn = os.Getenv("DM_DSN")
+			dsn = os.Getenv("DM_DSN")
 		case "sqlite":
-			*dsn = ""
+			dsn = ""
 		default:
-			*dsn = os.Getenv("DRIZZLE_PG_DSN")
+			dsn = os.Getenv("DRIZZLE_PG_DSN")
 		}
 	}
-	if *dsn == "" {
-		fail(fmt.Errorf("migrate: -dsn is required"))
+	if dsn == "" {
+		return migrateOpts{}, fmt.Errorf("migrate: -dsn is required")
 	}
-	ctx := context.Background()
-	conn, closeConn, err := openMigrate(ctx, *driver, *dsn)
-	if err != nil {
-		fail(err)
-	}
-	defer closeConn()
-	applied, err := migrate.Run(ctx, conn, migrate.Config{
-		Folder: *migrations,
-		Schema: *schemaName,
-		Table:  *table,
-	})
-	if err != nil {
-		fail(err)
-	}
-	fmt.Println(applied)
+	return migrateOpts{migrations: migrations, driver: driver, dsn: dsn, schema: schemaName, table: table}, nil
 }
 
 func openMigrate(ctx context.Context, driver, dsn string) (migrate.Conn, func() error, error) {
@@ -479,7 +537,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage: mist generate [-dir .]")
 	fmt.Fprintln(os.Stderr, "       mist ddl [-dir .] [-dialect pg] [-migrations dir] [-write] [-name schema]")
 	fmt.Fprintln(os.Stderr, "       mist check -dir . -migrations dir")
-	fmt.Fprintln(os.Stderr, "       mist migrate -migrations dir [-driver pg] [-dsn dsn] [-schema drizzle]")
+	fmt.Fprintln(os.Stderr, "       mist migrate -migrations dir [-driver pg] [-dsn dsn] [-schema mist] [-table __mist_migrations]")
+	fmt.Fprintln(os.Stderr, "       mist down -migrations dir [-driver pg] [-dsn dsn] [-schema mist] [-table __mist_migrations] [-to name | -all]")
 	fmt.Fprintln(os.Stderr, "       mist push [-dir .] [-driver pg] [-schema name] [-dsn dsn] [--force]")
 	os.Exit(2)
 }

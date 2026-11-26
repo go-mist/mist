@@ -92,7 +92,7 @@ func (db *DB) Query(ctx context.Context, query string, args ...any) (query.Rows,
 	if db.sqldb == nil {
 		return nil, errors.New("std: no connection pool")
 	}
-	logger.Log(db.logger, query, args)
+	defer logger.Start(db.logger, query, args)()
 	rows, err := db.sqldb.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (db *DB) Exec(ctx context.Context, query string, args ...any) (int64, error
 	if db.sqldb == nil {
 		return 0, errors.New("std: no connection pool")
 	}
-	logger.Log(db.logger, query, args)
+	defer logger.Start(db.logger, query, args)()
 	return execResult(db.sqldb.ExecContext(ctx, query, args...))
 }
 
@@ -141,7 +141,7 @@ func (t *Tx) Query(ctx context.Context, query string, args ...any) (query.Rows, 
 	if t.tx == nil {
 		return nil, errors.New("std: no transaction")
 	}
-	logger.Log(t.logger, query, args)
+	defer logger.Start(t.logger, query, args)()
 	rows, err := t.tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -154,7 +154,7 @@ func (t *Tx) Exec(ctx context.Context, query string, args ...any) (int64, error)
 	if t.tx == nil {
 		return 0, errors.New("std: no transaction")
 	}
-	logger.Log(t.logger, query, args)
+	defer logger.Start(t.logger, query, args)()
 	return execResult(t.tx.ExecContext(ctx, query, args...))
 }
 
@@ -244,7 +244,7 @@ type sqlStmt struct {
 }
 
 func (s *sqlStmt) Query(ctx context.Context, args ...any) (query.Rows, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	rows, err := s.stmt.QueryContext(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -253,7 +253,7 @@ func (s *sqlStmt) Query(ctx context.Context, args ...any) (query.Rows, error) {
 }
 
 func (s *sqlStmt) Exec(ctx context.Context, args ...any) (int64, error) {
-	logger.Log(s.logger, s.sql, args)
+	defer logger.Start(s.logger, s.sql, args)()
 	return execResult(s.stmt.ExecContext(ctx, args...))
 }
 

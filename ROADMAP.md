@@ -3,7 +3,7 @@
 本文档是 mist 的实施计划。**Why / Features 见 [README.md](./README.md)。**
 
 - 参考基准：**drizzle-orm v1.0.0-rc.5**（793 个 `.ts` 文件，约 109,555 行）
-- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。同一套 `mysql` 包也覆盖 MariaDB。同一套 `pg` 包也覆盖瀚高：占位符、引号、`returning`、`on conflict`、`lateral` 都按 PostgreSQL。连接用 `pg.Open`，默认端口 `5866`。pgx 不支持 SM3 认证。这条还没有在瀚高上跑过。`mssql` 包覆盖 SQL Server：方括号、`@p1`、`TOP`、`OUTPUT`、`OFFSET` / `FETCH`、`OUTER APPLY` 加 `FOR JSON`。`returning` 不写成 `OUTPUT`，`on conflict`、`for update` 报错。迁移表默认在 `dbo`，锁是事务里的 `sp_getapplock`。`FindMany` 的 `lateral` 在当前 MariaDB 上会被拒绝。反读时 JSON 列是 `longtext` 加 `json_valid` 检查，diff 不会空。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`migrate.Run` 能在 PostgreSQL、MySQL 和 SQLite 上应用目录。MySQL 的 DDL 会提交当前事务，锁用连接上的 `GET_LOCK`。SQLite 没有 schema，迁移表在当前库。`ddl`、introspect、`push` 覆盖 PostgreSQL、MySQL、SQLite 和 Oracle。`migrate.Run` 也能在 Oracle 上应用目录：迁移表在当前用户下，DDL 不包进事务。Oracle 已执行 join、`group by`、`having`、`distinct`、`with`、`union`、`except`、`for update`、`insert select`，以及 `FindMany` 的 `many`。`returning` 和 `on conflict` 仍报错，不改写成别的语句。`distinct on` 和 `for share` 同样报错。连接失败写成 `pg: connect`、`mysql: connect`、`sqlite: connect`、`oracle: connect`、`dm: connect` 或 `std: connect`，不把连接串写进错误。迁移目录读失败写明目录或文件路径。`dm` 包覆盖达梦：双引号、`?`、`LIMIT` / `OFFSET`，递归 CTE 仍写成 `WITH`，`RECURSIVE` 关键字会被服务器拒绝。驱动是纯 Go 的 `gitee.com/chunanyong/dm`，这个模块没有声明许可证。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。空 schema 表示当前用户，迁移的 DDL 不包进事务。`FindMany` 还没有。查询已在 Kiri 的 DM8 上跑过。迁移、`ddl` 和 `push` 还没有在真库上跑。
+- 当前状态：**M0–M9 已完成**（2026-11-23）。生成器读语法树，写出列描述符、扫描函数和 `ColumnSpecs()`。查询链能渲染并在 pgx 池和 `database/sql` 上执行。`numeric`、`jsonb`、`interval`、`bytea`、数组、`uuid`、枚举在参数上带类型后缀。关系查询的 `one` / `many` / `through` 能一次拉出嵌套结果，SQL 见 [ADR-0005](./docs/adr/0005-relational-query.md)。没有 join 时，select 列表仍带表名，见差异登记。迁移器读目录、在一个事务里应用，并用 `pg_advisory_xact_lock` 串行。M7 已完成（2026-11-23）：20 张表的迁移应用到空库再反读，diff 是空的。`mist push` 默认只打印 SQL。M8 已完成：MySQL 8.4 跑通查询矩阵里服务器接受的语句。同一套 `mysql` 包也覆盖 MariaDB。同一套 `pg` 包也覆盖瀚高：占位符、引号、`returning`、`on conflict`、`lateral` 都按 PostgreSQL。连接用 `pg.Open`，默认端口 `5866`。pgx 不支持 SM3 认证。这条还没有在瀚高上跑过。`mssql` 包覆盖 SQL Server：方括号、`@p1`、`TOP`、`OUTPUT`、`OFFSET` / `FETCH`、`OUTER APPLY` 加 `FOR JSON`。`returning` 不写成 `OUTPUT`，`on conflict`、`for update` 报错。迁移表默认在 `dbo`，锁是事务里的 `sp_getapplock`。`FindMany` 是相关子查询加 `json_arrayagg`，当前 MariaDB 能执行。见 ADR-0016。反读时 JSON 列是 `longtext` 加 `json_valid` 检查，diff 不会空。`on duplicate key update` 单独写，不从 `on conflict` 翻译，见 [ADR-0010](./docs/adr/0010-duplicate-key.md)。`migrate.Run` 能在 PostgreSQL、MySQL 和 SQLite 上应用目录。MySQL 的 DDL 会提交当前事务，锁用连接上的 `GET_LOCK`。SQLite 没有 schema，迁移表在当前库。`ddl`、introspect、`push` 覆盖 PostgreSQL、MySQL、SQLite 和 Oracle。`migrate.Run` 也能在 Oracle 上应用目录：迁移表在当前用户下，DDL 不包进事务。Oracle 已执行 join、`group by`、`having`、`distinct`、`with`、`union`、`except`、`for update`、`insert select`，以及 `FindMany` 的 `many`。`returning` 和 `on conflict` 仍报错，不改写成别的语句。`distinct on` 和 `for share` 同样报错。连接失败写成 `pg: connect`、`mysql: connect`、`sqlite: connect`、`oracle: connect`、`dm: connect` 或 `std: connect`，不把连接串写进错误。迁移目录读失败写明目录或文件路径。`dm` 包覆盖达梦：双引号、`?`、`LIMIT` / `OFFSET`，递归 CTE 仍写成 `WITH`，`RECURSIVE` 关键字会被服务器拒绝。驱动是纯 Go 的 `gitee.com/chunanyong/dm`，这个模块没有声明许可证。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。空 schema 表示当前用户，迁移的 DDL 不包进事务。`FindMany` 是相关子查询加 `LISTAGG`，这台 DM8 不接受 `LATERAL`。见 ADR-0015。查询已在 Kiri 的 DM8 上跑过。迁移、`ddl` 和 `push` 还没有在真库上跑。
 - 排期单位：**人周**，按单人全职粗估，只用于判断量级，不是承诺
 
 ---
@@ -418,7 +418,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-20） · **粗估**：2 – 3 周 · **依赖**：M3
 
-`migrate.Run` 读取子目录里的 `up.sql`。`down.sql` 先留在同一目录，不执行，也不参与 sha256。一次调用里的语句放在同一个事务中，失败则整批回滚。事务开始后先拿 `pg_advisory_xact_lock`，再读已应用的 `name`。空语句会被丢掉，sha256 仍按 `up.sql` 原文计算。目录名前 14 位必须是合法的 UTC 时间。CLI 的 `mist migrate` 留在 M7。
+`migrate.Run` 读取子目录里的 `up.sql`。`down.sql` 由 `migrate.Down` 执行，不参与 sha256。`Down` 回滚最近一条已应用的迁移。`DownTo` 停在指定目录，空名字则全部回滚。占位或没有语句的 `down.sql` 会拒绝执行，记录留着。一次 `Run` 里的语句放在同一个事务中，失败则整批回滚。每一次 down 单独一个事务。事务开始后先拿 `pg_advisory_xact_lock`，再读已应用的 `name`。空语句会被丢掉，sha256 仍按 `up.sql` 原文计算。目录名前 14 位必须是合法的 UTC 时间。CLI 的 `mist migrate` 留在 M7。`mist down` 对应 `Down` 和 `DownTo`。
 
 #### 目标
 
@@ -460,7 +460,7 @@ func scanUser(row pg.Row, u *User) error {
 
 **状态**：已完成（2026-11-23） · **粗估**：8 – 12 周（最重） · **依赖**：M1、M6
 
-`mist ddl -migrations -write` 在新目录里写下一次 `up.sql`、`down.sql` 和 `snapshot.json`。`down.sql` 只占位，不执行。旧目录不改。两份最新快照如果改的不是同一个列、索引或约束，下一次的 `prevIds` 带上这两份，SQL 只含新的差异；改的是同一个对象时，`ddl`、`check` 和 `migrate` 都停。`mist migrate` 应用目录。`mist check` 对照快照和每个 `up.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
+`mist ddl -migrations -write` 在新目录里写下一次 `up.sql`、`down.sql` 和 `snapshot.json`。`down.sql` 先写成占位，`migrate down` 拒绝执行占位。旧目录不改。两份最新快照如果改的不是同一个列、索引或约束，下一次的 `prevIds` 带上这两份，SQL 只含新的差异；改的是同一个对象时，`ddl`、`check` 和 `migrate` 都停。`mist migrate` 应用目录。`mist check` 对照快照和每个 `up.sql` 的 sha256，不重放 SQL。`mist push` 对照数据库打印 SQL，默认不执行；终端确认或 `--force` 才执行。删表、删列、改类型标成破坏性。20 张表、enum、复合主键、外键、索引和默认值的迁移，应用到空库再反读，diff 是空的。`mist generate` 仍只写 Go 描述符。边界见 [ADR-0008](./docs/adr/0008-ddl-model.md)。
 
 #### 目标
 
@@ -596,9 +596,9 @@ drizzle-kit 的等价物：从 schema 生成迁移，或直接推到数据库。
 | testcontainers | 集成测试在没有 DSN 时用 testcontainers 起 PostgreSQL 16 和 MySQL 8.4。SQLite 是临时文件，驱动嵌在进程里。GitHub Actions 走这条路径 | 已完成 |
 | Benchmark | `bench/` 对比 mist、sqlx、gorm、ent、bun 的查询构建、结果映射、并发执行。Actions 把 `bench.txt` 存成 artifact | 已完成 |
 | 示例项目 | `examples/tasks`：标准库 CLI 和 HTTP，覆盖生成、迁移、增删改查和事务 | 已完成 |
-| 文档站 | https://go-mist.github.io/ 已挂上短指南。从 gorm / sqlc 过来的迁移指南还没有 | 进行中 |
+| 文档站 | https://go-mist.github.io/ 已挂上短指南。从 gorm / sqlc 过来的迁移指南在文档站仓库，页面是 From GORM 和 From sqlc | 已完成 |
 | 发布流程 | v0.1.0 已打 tag，说明见 CHANGELOG.md。0.x 仍可能改 API | 已完成 |
-| 错误信息 | 生成、编码、扫描、关系过滤里能定位到列的错误写明表、列和期望。连接和迁移目录这类错误不编造表名 | 进行中 |
+| 错误信息 | 生成、编码、扫描、关系过滤里能定位到列的错误写明表、列和期望。连接和迁移目录这类错误不编造表名 | 已完成 |
 
 ---
 
@@ -661,6 +661,8 @@ M2 ──> M8 ──> M9
 | ADR-0012 | `insert ignore` 不并进 `on conflict do nothing` | M8 内 | 已接受 |
 | ADR-0013 | `update` / `delete` 的 `order by` 和 `limit` 只在 MySQL 单表上写 | M8 内 | 已接受 |
 | ADR-0014 | SQLite 关系查询不用 `lateral` | M9 内 | 已接受 |
+| ADR-0015 | 达梦关系查询用字符串拼 JSON，不用 `LATERAL` | M10 | 已接受 |
+| ADR-0016 | MySQL 关系查询不再用 `LATERAL`，MariaDB 走同一条 SQL | M10 | 已接受 |
 
 ---
 
@@ -862,3 +864,6 @@ M2 ──> M8 ──> M9
 | 2026-11-24 | 方言包收到 `dialect/`：`dialect/pg`、`dialect/mysql`、`dialect/sqlite`、`dialect/oracle`、`dialect/mssql`、`dialect/dm`。`ddl/` 仍按库分目录。`std` 留在根目录，用 `database/sql` 执行 PostgreSQL |
 | 2026-11-24 | 增加 `dm`。查询、迁移、`ddl`、introspect、`push` 走达梦，占位符是 `?`，标识符用双引号。`returning` 不写成 `RETURNING INTO`，`on conflict` 不写成 `MERGE`。`FindMany` 还没有。查询已在 Kiri 的 DM8（`xuxuclassmate/dameng`，`127.0.0.1:5236`）上跑过。`FindMany`、迁移和 push 还没有在真库上跑 |
 | 2026-11-25 | v0.1.0。迁移目录是 `up.sql`、占位的 `down.sql` 和 `snapshot.json`。`down.sql` 不执行。`migrate.Run` 可以读 `embed.FS`。边界写在 CHANGELOG.md |
+| 2026-11-25 | `migrate.Down` 回滚最近一条，`DownTo` 回滚到指定目录。`down.sql` 手写。占位文件拒绝执行。每次 down 一个事务。`mist down` 走同一条路径 |
+| 2026-11-26 | `dm.FindMany` 用相关子查询和 `LISTAGG` 拼 JSON。这台 DM8 没有 `LATERAL`，也没有 `JSON_ARRAYAGG`。`one` / `many` / `through` 已在 Kiri 的 `xuxuclassmate/dameng` 上跑过。见 ADR-0015。`page.NoCount` 跳过总数，`page.FetchAfter` 按一列的上一行继续翻 |
+| 2026-11-26 | `mysql.FindMany` 改成相关子查询，当前 MariaDB 能执行。见 ADR-0016。能定位到列的错误写明表、列和期望。文档站补上 From GORM 和 From sqlc |

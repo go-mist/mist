@@ -1,8 +1,10 @@
 package query
 
 import (
+	"errors"
 	"reflect"
 
+	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/sql"
 	"github.com/go-mist/mist/sql/dialect"
 )
@@ -371,6 +373,10 @@ type Update[T any] struct {
 	outputInsertedSet bool
 	outputDeletedSet  bool
 	withs             []WithSpec
+	allRows           bool
+	versionCol        Column[T]
+	versionVal        any
+	versionSet        bool
 }
 
 // NewUpdate starts an update. Callers write pg.Update.
@@ -438,8 +444,44 @@ func (u Update[T]) With(ctes ...WithSource) Update[T] {
 }
 
 // Where sets the condition. A later call replaces the previous one. nil means there is no where.
+// Exec, All, One, and Prepare refuse a missing condition. AllRows or Version supplies one.
+// SQL still renders a statement that has no where clause.
 func (u Update[T]) Where(cond sql.Chunk) Update[T] {
 	u.where = cond
+	return u
+}
+
+// AllRows allows this update to run with no where clause.
+func (u Update[T]) AllRows() Update[T] {
+	u.allRows = true
+	return u
+}
+
+// Version adds set col = col + 1 and col = current.
+// A later Where is kept and combined with the version comparison.
+// Exec, All, One, and a prepared exec report ErrVersionConflict when no row changes.
+func (u Update[T]) Version(col Column[T], current any) Update[T] {
+	u.versionCol = col
+	u.versionVal = current
+	u.versionSet = true
+	return u
+}
+
+func (u Update[T]) guardWhere() error {
+	if u.where != nil || u.allRows || u.versionSet {
+		return nil
+	}
+	return errors.New("query: update has no where")
+}
+
+func (u Update[T]) withVersion() Update[T] {
+	u = u.Set(u.versionCol, op.Add(u.versionCol, 1))
+	cond := op.Eq(u.versionCol, u.versionVal)
+	if u.where == nil {
+		u.where = cond
+		return u
+	}
+	u.where = op.And(u.where, cond)
 	return u
 }
 
@@ -485,7 +527,12 @@ func (u Update[T]) OutputDeleted(cols ...Column[T]) Update[T] {
 }
 
 // Spec expands this chain. Set is restored to call order.
+// Version is applied here, so the rendered statement contains both the increment and the comparison.
 func (u Update[T]) Spec() UpdateSpec {
+	if u.versionSet && u.versionCol != nil {
+		u = u.withVersion()
+		u.versionSet = false
+	}
 	sets := assignments(u.sets)
 	if u.sets == nil && u.nSets > 0 {
 		sets = make([]Assignment, u.nSets)
@@ -517,6 +564,9 @@ func (u Update[T]) Spec() UpdateSpec {
 
 // SQL asks the dialect to build the fragments, then renders them into text and parameters.
 func (u Update[T]) SQL(d UpdateDialect) (sql.Query, error) {
+	if err := u.versionColumn(); err != nil {
+		return sql.Query{}, err
+	}
 	spec := u.Spec()
 	if q, ok, err := tryUpdate(d, spec); err != nil || ok {
 		return q, err
@@ -541,6 +591,7 @@ type Delete[T any] struct {
 	output    []Column[T]
 	outputSet bool
 	withs     []WithSpec
+	allRows   bool
 }
 
 // NewDelete starts a delete. Callers write pg.Delete.
@@ -586,9 +637,24 @@ func (d Delete[T]) addJoin(kind JoinKind, table, on sql.Chunk) Delete[T] {
 }
 
 // Where sets the condition. A later call replaces the previous one. If Where is not called, there is no where clause.
+// Exec, All, One, and Prepare refuse a missing condition. AllRows allows it.
+// SQL still renders a statement that has no where clause.
 func (d Delete[T]) Where(cond sql.Chunk) Delete[T] {
 	d.where = cond
 	return d
+}
+
+// AllRows allows this delete to run with no where clause.
+func (d Delete[T]) AllRows() Delete[T] {
+	d.allRows = true
+	return d
+}
+
+func (d Delete[T]) guardWhere() error {
+	if d.where != nil || d.allRows {
+		return nil
+	}
+	return errors.New("query: delete has no where")
 }
 
 // OrderBy sets the ordering. A later call replaces the previous one. Only single-table MySQL renders it.

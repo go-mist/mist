@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/go-mist/mist/query"
 	"github.com/go-mist/mist/relation"
@@ -118,6 +119,9 @@ func find[T any](ctx context.Context, db Queryer, schema *relation.Schema, table
 				owned[i] = append([]byte(nil), b...)
 			}
 		}
+		if err := sortRelationBlobs(owned, built.Selection.Rels); err != nil {
+			return nil, err
+		}
 		if err := schema.Fill(table, built.Selection, row, owned); err != nil {
 			return nil, err
 		}
@@ -136,6 +140,118 @@ func find[T any](ctx context.Context, db Queryer, schema *relation.Schema, table
 		}
 	}
 	return out, nil
+}
+
+// sortRelationBlobs orders many-relation arrays by mfkord.
+// MariaDB's json_arrayagg does not keep the query's ORDER BY. MySQL usually does.
+// The number is removed before the row is decoded, unless the selection already uses that key.
+func sortRelationBlobs(blobs [][]byte, rels []relation.RelSelection) error {
+	for i, rel := range rels {
+		if len(blobs[i]) == 0 || string(blobs[i]) == "null" {
+			continue
+		}
+		var next []byte
+		var err error
+		if rel.Many {
+			next, err = sortManyJSON(blobs[i], rel.Inner)
+		} else {
+			next, err = sortOneJSON(blobs[i], rel.Inner)
+		}
+		if err != nil {
+			return err
+		}
+		blobs[i] = next
+	}
+	return nil
+}
+
+func sortManyJSON(raw []byte, inner relation.Selection) ([]byte, error) {
+	var arr []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &arr); err != nil {
+		return nil, err
+	}
+	for i := range arr {
+		if err := sortNested(arr[i], inner); err != nil {
+			return nil, err
+		}
+	}
+	if !selectionUses(inner, orderCol) && arraysCarryOrder(arr) {
+		sort.SliceStable(arr, func(i, j int) bool {
+			return orderValue(arr[i][orderCol]) < orderValue(arr[j][orderCol])
+		})
+		for i := range arr {
+			delete(arr[i], orderCol)
+		}
+	}
+	return json.Marshal(arr)
+}
+
+func sortOneJSON(raw []byte, inner relation.Selection) ([]byte, error) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, err
+	}
+	if err := sortNested(obj, inner); err != nil {
+		return nil, err
+	}
+	return json.Marshal(obj)
+}
+
+func sortNested(obj map[string]json.RawMessage, inner relation.Selection) error {
+	for _, rel := range inner.Rels {
+		raw, ok := obj[rel.Name]
+		if !ok || len(raw) == 0 || string(raw) == "null" {
+			continue
+		}
+		var next []byte
+		var err error
+		if rel.Many {
+			next, err = sortManyJSON(raw, rel.Inner)
+		} else {
+			next, err = sortOneJSON(raw, rel.Inner)
+		}
+		if err != nil {
+			return err
+		}
+		obj[rel.Name] = next
+	}
+	return nil
+}
+
+func arraysCarryOrder(arr []map[string]json.RawMessage) bool {
+	for _, obj := range arr {
+		if _, ok := obj[orderCol]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func selectionUses(sel relation.Selection, key string) bool {
+	for _, col := range sel.Columns {
+		if col == key {
+			return true
+		}
+	}
+	for _, ex := range sel.Extras {
+		if ex.Key == key {
+			return true
+		}
+	}
+	for _, rel := range sel.Rels {
+		if rel.Name == key {
+			return true
+		}
+	}
+	return false
+}
+
+func orderValue(raw json.RawMessage) int64 {
+	var n int64
+	if err := json.Unmarshal(raw, &n); err != nil {
+		return 0
+	}
+	return n
 }
 
 func relationalCacheKey(rendered sql.Query) (string, error) {

@@ -15,6 +15,9 @@ var ErrNoRows = errors.New("query: no rows")
 // ErrManyRows means One read multiple rows.
 var ErrManyRows = errors.New("query: multiple rows")
 
+// ErrVersionConflict means a versioned update changed no rows.
+var ErrVersionConflict = errors.New("query: version conflict")
+
 // MissingField reports a selected column whose generated field pointer is nil.
 func MissingField(col interface{ ColName() string }) error {
 	name := col.ColName()
@@ -187,52 +190,92 @@ func (ins Insert[T]) One(ctx context.Context, db Executor) (T, error) {
 
 // Exec executes the update. When Returning or Output is set, use All or One instead.
 func (u Update[T]) Exec(ctx context.Context, db Executor) (int64, error) {
+	if err := u.guardWhere(); err != nil {
+		return 0, err
+	}
+	if err := u.versionColumn(); err != nil {
+		return 0, err
+	}
 	if u.outputInsertedSet || u.outputDeletedSet {
 		return 0, errors.New("query: use All or One when output is set")
 	}
 	if len(u.returning) > 0 {
 		return 0, errors.New("query: use All or One when returning is set")
 	}
-	if n, ok, err := u.tryFastExec(ctx, db); ok {
-		return n, err
+	if !u.versionSet {
+		if n, ok, err := u.tryFastExec(ctx, db); ok {
+			return n, err
+		}
 	}
 	spec := u.Spec()
-	if q, ok, err := tryUpdate(db, spec); err != nil || ok {
-		if err != nil {
-			return 0, err
+	var (
+		n   int64
+		err error
+	)
+	if q, ok, err2 := tryUpdate(db, spec); err2 != nil || ok {
+		if err2 != nil {
+			return 0, err2
 		}
-		return db.Exec(ctx, q.SQL, q.Params...)
+		n, err = db.Exec(ctx, q.SQL, q.Params...)
+	} else {
+		n, err = execSQL(ctx, db, func() (*sql.SQL, error) {
+			return db.BuildUpdateQuery(spec)
+		})
 	}
-	return execSQL(ctx, db, func() (*sql.SQL, error) {
-		return db.BuildUpdateQuery(spec)
-	})
+	return versionAffected(u.versionSet, n, err)
 }
 
 // All executes an update with RETURNING or OUTPUT.
 func (u Update[T]) All(ctx context.Context, db Executor) ([]T, error) {
+	if err := u.guardWhere(); err != nil {
+		return nil, err
+	}
+	if err := u.versionColumn(); err != nil {
+		return nil, err
+	}
 	cols, err := u.resultCols()
 	if err != nil {
 		return nil, err
 	}
-	return allCols(ctx, db, cols, func() (*sql.SQL, error) {
+	rows, err := allCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildUpdateQuery(u.Spec())
 	})
+	if err != nil {
+		return nil, err
+	}
+	if u.versionSet && len(rows) == 0 {
+		return nil, ErrVersionConflict
+	}
+	return rows, nil
 }
 
 // One executes an update with RETURNING or OUTPUT and requires exactly one row.
 func (u Update[T]) One(ctx context.Context, db Executor) (T, error) {
 	var zero T
+	if err := u.guardWhere(); err != nil {
+		return zero, err
+	}
+	if err := u.versionColumn(); err != nil {
+		return zero, err
+	}
 	cols, err := u.resultCols()
 	if err != nil {
 		return zero, err
 	}
-	return oneCols(ctx, db, cols, func() (*sql.SQL, error) {
+	row, err := oneCols(ctx, db, cols, func() (*sql.SQL, error) {
 		return db.BuildUpdateQuery(u.Spec())
 	})
+	if u.versionSet && errors.Is(err, ErrNoRows) {
+		return zero, ErrVersionConflict
+	}
+	return row, err
 }
 
 // Exec executes the delete. When Returning or Output is set, use All or One instead.
 func (d Delete[T]) Exec(ctx context.Context, db Executor) (int64, error) {
+	if err := d.guardWhere(); err != nil {
+		return 0, err
+	}
 	if d.outputSet {
 		return 0, errors.New("query: use All or One when output is set")
 	}
@@ -246,6 +289,9 @@ func (d Delete[T]) Exec(ctx context.Context, db Executor) (int64, error) {
 
 // All executes a delete with RETURNING or OUTPUT.
 func (d Delete[T]) All(ctx context.Context, db Executor) ([]T, error) {
+	if err := d.guardWhere(); err != nil {
+		return nil, err
+	}
 	cols, err := d.resultCols()
 	if err != nil {
 		return nil, err
@@ -258,6 +304,9 @@ func (d Delete[T]) All(ctx context.Context, db Executor) ([]T, error) {
 // One executes a delete with RETURNING or OUTPUT and requires exactly one row.
 func (d Delete[T]) One(ctx context.Context, db Executor) (T, error) {
 	var zero T
+	if err := d.guardWhere(); err != nil {
+		return zero, err
+	}
 	cols, err := d.resultCols()
 	if err != nil {
 		return zero, err
@@ -440,6 +489,20 @@ func queryRows(ctx context.Context, db Executor, build func() (*sql.SQL, error))
 		return nil, err
 	}
 	return db.Query(ctx, q.SQL, q.Params...)
+}
+
+func (u Update[T]) versionColumn() error {
+	if u.versionSet && u.versionCol == nil {
+		return errors.New("query: version column is missing")
+	}
+	return nil
+}
+
+func versionAffected(version bool, n int64, err error) (int64, error) {
+	if err != nil || !version || n != 0 {
+		return n, err
+	}
+	return 0, ErrVersionConflict
 }
 
 func execSQL(ctx context.Context, db Executor, build func() (*sql.SQL, error)) (int64, error) {
