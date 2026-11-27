@@ -34,6 +34,16 @@ func (t userTable) Columns() []sql.Chunk {
 	return []sql.Chunk{t.ID, t.Name, t.Email, t.CreatedAt}
 }
 
+// As copies this table and uses name as its identifier. Each column reference uses the same name.
+func (t userTable) As(name string) userTable {
+	t.SQLName = name
+	t.ID.Table = name
+	t.Name.Table = name
+	t.Email.Table = name
+	t.CreatedAt.Table = name
+	return t
+}
+
 func (userTable) PrimaryKey() []string {
 	return []string{"id"}
 }
@@ -93,6 +103,15 @@ func (postTable) Row() *Post { return nil }
 // Columns are the full-row select list, in the same order as scanPost.
 func (t postTable) Columns() []sql.Chunk {
 	return []sql.Chunk{t.ID, t.AuthorID, t.Title}
+}
+
+// As copies this table and uses name as its identifier. Each column reference uses the same name.
+func (t postTable) As(name string) postTable {
+	t.SQLName = name
+	t.ID.Table = name
+	t.AuthorID.Table = name
+	t.Title.Table = name
+	return t
 }
 
 func (postTable) PrimaryKey() []string {

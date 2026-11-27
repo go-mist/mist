@@ -6,6 +6,7 @@
 package query
 
 import (
+	"github.com/go-mist/mist/op"
 	"github.com/go-mist/mist/sql"
 	"github.com/go-mist/mist/sql/dialect"
 )
@@ -648,6 +649,82 @@ func buildSpec(from sql.Chunk, cols []sql.Chunk, tail *clause) SelectSpec {
 	}
 	spec.Joins = joins
 	return spec
+}
+
+// RowCount is count(*) over the same rows this select would return before limit, offset, and order.
+// Group by, distinct, set operations, and common table expressions are counted as a derived table.
+// A limit written before a set operation stays, because it changes that side of the set.
+func (s Select[T]) RowCount() ScanQuery[int64] {
+	base := s.dropPageWindow()
+	spec := base.Spec()
+	if len(spec.GroupBy) == 0 && spec.Having == nil && !spec.Distinct && len(spec.DistinctOn) == 0 &&
+		len(spec.Sets) == 0 && len(spec.With) == 0 && spec.SetErr == "" {
+		q := NewValue[int64](op.Count()).From(spec.From)
+		for _, j := range spec.Joins {
+			q = q.addJoin(j.Kind, j.Table, j.On)
+		}
+		if spec.Where != nil {
+			q = q.Where(spec.Where)
+		}
+		return q
+	}
+	return NewValue[int64](op.Count()).From(base.As("mist_count"))
+}
+
+// dropPageWindow removes the outermost order, limit, offset, top, and row lock.
+func (s Select[T]) dropPageWindow() Select[T] {
+	if s.tail == nil {
+		s.order = nil
+		s.limit = 0
+		s.limitSet = false
+		s.offset = 0
+		s.offsetSet = false
+		s.top = 0
+		s.topSet = false
+		return s
+	}
+	nodes := callOrder(s.tail)
+	lastSet := -1
+	for i, n := range nodes {
+		if n.kind == clauseSet {
+			lastSet = i
+		}
+	}
+	var kept []*clause
+	for i, n := range nodes {
+		if i > lastSet && isPageWindow(n.kind) {
+			continue
+		}
+		kept = append(kept, n)
+	}
+	s.tail = relink(kept)
+	s.order = nil
+	s.limit = 0
+	s.limitSet = false
+	s.offset = 0
+	s.offsetSet = false
+	s.top = 0
+	s.topSet = false
+	return s
+}
+
+func isPageWindow(kind clauseKind) bool {
+	switch kind {
+	case clauseOrder, clauseLimit, clauseOffset, clauseTop, clauseLock:
+		return true
+	default:
+		return false
+	}
+}
+
+func relink(nodes []*clause) *clause {
+	var tail *clause
+	for _, n := range nodes {
+		cp := *n
+		cp.prev = tail
+		tail = &cp
+	}
+	return tail
 }
 
 // SQL asks the dialect to build the fragments, then renders them into text and parameters.

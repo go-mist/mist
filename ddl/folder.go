@@ -42,7 +42,7 @@ func Plan(folder string, desired schema.Schema, render Render) (string, []diff.C
 	return sql, changes, nil
 }
 
-// WriteMigration writes the next change as a new directory containing up.sql, down.sql, and snapshot.json. down.sql is reserved and is not applied.
+// WriteMigration writes the next change as a new directory containing up.sql, down.sql, and snapshot.json. down.sql starts as a placeholder. migrate down refuses to run that placeholder.
 func WriteMigration(folder, name string, at time.Time, desired schema.Schema, render Render) (Written, error) {
 	if folder == "" {
 		return Written{}, fmt.Errorf("ddl: missing migrations directory")

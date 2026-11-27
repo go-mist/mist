@@ -111,7 +111,7 @@ func fieldFilter(table *relation.Table, alias string, f relation.Filter) (*sql.S
 	case "notBetween":
 		return op.NotBetween(ref, f.Value, f.Value2), nil
 	default:
-		return nil, fmt.Errorf("relation: unknown comparison %q", f.Op)
+		return nil, fmt.Errorf("relation: table %s column %s: unknown comparison %q; expected eq, ne, gt, gte, lt, lte, like, ilike, notLike, notIlike, isNull, isNotNull, in, notIn, between, or notBetween", table.Name, f.Column, f.Op)
 	}
 }
 

@@ -42,9 +42,9 @@ func (c oracleConn) SessionLock(ctx context.Context, schema, name string) (func(
 	if c.db == nil || c.db.sqldb == nil {
 		return nil, fmt.Errorf("migrate: oracle has no connection")
 	}
-	table := `"__drizzle_lock"`
+	table := `"__mist_lock"`
 	if schema != "" {
-		table = `"` + schema + `"."__drizzle_lock"`
+		table = `"` + schema + `"."__mist_lock"`
 	}
 	create := fmt.Sprintf(`BEGIN EXECUTE IMMEDIATE 'CREATE TABLE %s ("name" VARCHAR2(128) PRIMARY KEY)'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -955 THEN RAISE; END IF; END;`, table)
 	if _, err := c.db.Exec(ctx, create); err != nil {

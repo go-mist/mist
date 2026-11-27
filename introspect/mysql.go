@@ -9,7 +9,7 @@ import (
 )
 
 // ReadMySQL reads tables in one database. Views are not read.
-// The migration bookkeeping tables __drizzle_migrations and __drizzle_lock are skipped.
+// The migration bookkeeping tables __mist_migrations and __mist_lock are skipped.
 func ReadMySQL(ctx context.Context, q Querier, database string) (schema.Schema, error) {
 	if q == nil {
 		return schema.Schema{}, fmt.Errorf("introspect: missing connection")
@@ -314,5 +314,5 @@ func mysqlChecks(ctx context.Context, q Querier, database string, tables map[str
 }
 
 func skipBookkeeping(name string) bool {
-	return name == "__drizzle_migrations" || name == "__drizzle_lock"
+	return name == "__mist_migrations" || name == "__mist_lock"
 }

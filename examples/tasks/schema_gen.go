@@ -30,6 +30,15 @@ func (t taskTable) Columns() []sql.Chunk {
 	return []sql.Chunk{t.ID, t.Title, t.Done}
 }
 
+// As copies this table and uses name as its identifier. Each column reference uses the same name.
+func (t taskTable) As(name string) taskTable {
+	t.SQLName = name
+	t.ID.Table = name
+	t.Title.Table = name
+	t.Done.Table = name
+	return t
+}
+
 func (taskTable) PrimaryKey() []string {
 	return []string{"id"}
 }
@@ -82,6 +91,15 @@ func (eventTable) Row() *Event { return nil }
 // Columns are the full-row select list, in the same order as scanEvent.
 func (t eventTable) Columns() []sql.Chunk {
 	return []sql.Chunk{t.ID, t.TaskID, t.Action}
+}
+
+// As copies this table and uses name as its identifier. Each column reference uses the same name.
+func (t eventTable) As(name string) eventTable {
+	t.SQLName = name
+	t.ID.Table = name
+	t.TaskID.Table = name
+	t.Action.Table = name
+	return t
 }
 
 func (eventTable) PrimaryKey() []string {

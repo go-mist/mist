@@ -106,6 +106,11 @@ func TestGenerateRejects(t *testing.T) {
 			want: "identity cannot be combined with default",
 		},
 		{
+			name: "cannot infer",
+			body: "type Money struct{}\ntype User struct { Amount Money `mist:\"amount,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
+			want: "field Amount: cannot infer an SQL type from Money; expected int64, int32, int16, string, bool, time.Time, or []byte",
+		},
+		{
 			name: "cross package embed",
 			body: "type User struct { time.Time `mist:\"created_at,timestamptz,notnull\"` }\nfunc (User) Table() pg.TableMeta { return pg.TableMeta{Name: \"users\"} }\n",
 			want: "embedded fields from another package",

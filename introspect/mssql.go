@@ -9,7 +9,7 @@ import (
 )
 
 // ReadMSSQL reads tables in one schema. Views are not read.
-// The migration bookkeeping tables __drizzle_migrations and __drizzle_lock are skipped.
+// The migration bookkeeping tables __mist_migrations and __mist_lock are skipped.
 // nvarchar(max) with a check isjson(column) = 1 is folded back to json.
 func ReadMSSQL(ctx context.Context, q Querier, schemaName string) (schema.Schema, error) {
 	if q == nil {

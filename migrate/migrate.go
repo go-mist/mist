@@ -44,60 +44,18 @@ type Config struct {
 // An already applied name applies zero migrations the next time. A name missing in the middle is filled in, without consulting the created_at watermark.
 // If an already recorded file's contents have changed, Run returns HashError, and the message includes the directory name.
 func Run(ctx context.Context, conn Conn, cfg Config) (int, error) {
-	files, err := openFS(cfg)
+	files, eng, schema, table, unlock, err := prepare(ctx, conn, cfg)
 	if err != nil {
 		return 0, err
 	}
-	if err := history.ConflictsFS(files); err != nil {
-		return 0, err
-	}
-	if conn == nil {
-		return 0, fmt.Errorf("migrate: missing connection")
-	}
-	eng, err := engineFor(conn.Driver())
-	if err != nil {
-		return 0, err
-	}
-	schema, table, err := eng.normalize(cfg)
-	if err != nil {
-		return 0, err
-	}
+	defer func() {
+		if unlock != nil {
+			_ = unlock()
+		}
+	}()
 	local, err := ReadFS(files)
 	if err != nil {
 		return 0, err
-	}
-	var unlock func() error
-	if locker, ok := conn.(sessionLocker); ok {
-		unlock, err = locker.SessionLock(ctx, schema, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
-		if err != nil {
-			return 0, err
-		}
-		defer func() {
-			if unlock != nil {
-				_ = unlock()
-			}
-		}()
-	}
-	if stmt := eng.schemaSQL(schema); stmt != "" {
-		if err := execIdempotent(ctx, conn, eng, stmt); err != nil {
-			return 0, err
-		}
-	}
-	for _, stmt := range eng.prepare(schema, table) {
-		if err := execIdempotent(ctx, conn, eng, stmt); err != nil {
-			return 0, err
-		}
-	}
-	columns, err := tableColumns(ctx, conn, eng, schema, table)
-	if err != nil {
-		return 0, err
-	}
-	if len(columns) == 0 {
-		if err := execIdempotent(ctx, conn, eng, eng.createTable(schema, table)); err != nil {
-			return 0, err
-		}
-	} else if !hasName(columns) {
-		return 0, &OldTableError{Schema: schema, Table: table}
 	}
 	applied := 0
 	err = conn.Tx(ctx, func(tx Conn) error {
@@ -144,6 +102,64 @@ func Run(ctx context.Context, conn Conn, cfg Config) (int, error) {
 		return 0, err
 	}
 	return applied, nil
+}
+
+// prepare opens the migration files, takes the session lock, and creates the migration table.
+// The caller releases unlock. A nil unlock means this driver locks inside the transaction.
+func prepare(ctx context.Context, conn Conn, cfg Config) (fs.FS, engine, string, string, func() error, error) {
+	files, err := openFS(cfg)
+	if err != nil {
+		return nil, engine{}, "", "", nil, err
+	}
+	if err := history.ConflictsFS(files); err != nil {
+		return nil, engine{}, "", "", nil, err
+	}
+	if conn == nil {
+		return nil, engine{}, "", "", nil, fmt.Errorf("migrate: missing connection")
+	}
+	eng, err := engineFor(conn.Driver())
+	if err != nil {
+		return nil, engine{}, "", "", nil, err
+	}
+	schema, table, err := eng.normalize(cfg)
+	if err != nil {
+		return nil, engine{}, "", "", nil, err
+	}
+	var unlock func() error
+	if locker, ok := conn.(sessionLocker); ok {
+		unlock, err = locker.SessionLock(ctx, schema, fmt.Sprintf("mist:%d", advisoryKey(schema, table)))
+		if err != nil {
+			return nil, engine{}, "", "", nil, err
+		}
+	}
+	fail := func(err error) (fs.FS, engine, string, string, func() error, error) {
+		if unlock != nil {
+			_ = unlock()
+		}
+		return nil, engine{}, "", "", nil, err
+	}
+	if stmt := eng.schemaSQL(schema); stmt != "" {
+		if err := execIdempotent(ctx, conn, eng, stmt); err != nil {
+			return fail(err)
+		}
+	}
+	for _, stmt := range eng.prepare(schema, table) {
+		if err := execIdempotent(ctx, conn, eng, stmt); err != nil {
+			return fail(err)
+		}
+	}
+	columns, err := tableColumns(ctx, conn, eng, schema, table)
+	if err != nil {
+		return fail(err)
+	}
+	if len(columns) == 0 {
+		if err := execIdempotent(ctx, conn, eng, eng.createTable(schema, table)); err != nil {
+			return fail(err)
+		}
+	} else if !hasName(columns) {
+		return fail(&OldTableError{Schema: schema, Table: table})
+	}
+	return files, eng, schema, table, unlock, nil
 }
 
 type appliedRow struct {

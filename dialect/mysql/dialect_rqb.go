@@ -8,15 +8,10 @@ import (
 	"github.com/go-mist/mist/sql"
 )
 
-// MySQL has no row_to_json / json_agg. The shape follows drizzle-orm v1.0.0-rc.5 mysql-core,
-// which differs from the PostgreSQL form in ADR-0005; see ADR-0011.
-const (
-	rqbJoinOpen = " left join lateral(select "
-	rqbJoinFrom = " as `r` from ("
-	rqbJoinEnd  = ") as `t`) as "
-	rqbOnTrue   = " on true"
-	rqbRelField = ".`r` as "
-)
+// MySQL has no row_to_json / json_agg. Nested relations are correlated subqueries of
+// json_arrayagg / json_object. MariaDB rejects LATERAL, and it also rejects an outer
+// column inside a derived table, so the parent key is matched outside that table.
+// Order and limit use row_number partitioned by the parent key. See ADR-0016.
 
 // BuildRelationalQuery compiles one level of a relational query into an SQL fragment.
 // mode is relation.ModeMany or relation.ModeFirst.
@@ -36,7 +31,7 @@ func BuildRelationalQuery(schema *relation.Schema, table string, cfg relation.Co
 		return relation.Built{}, err
 	}
 	q := &rqb{schema: schema, strategy: strategy}
-	sel, err := q.collect(tab, &cfg, mode, 0, nil, nil)
+	sel, err := q.collect(tab, &cfg, mode, 0, nil, nil, nil)
 	if err != nil {
 		return relation.Built{}, err
 	}
@@ -82,6 +77,33 @@ type rqb struct {
 	chunks   []sql.Chunk
 }
 
+// fkCol is one parent-key column. inner is selected inside the derived table;
+// the comparison with outer is written after that table, where MariaDB can see the parent.
+type fkCol struct {
+	inner *sql.SQL
+	outer *sql.SQL
+	alias string
+}
+
+// outsideBind marks a relation subquery whose parent match is applied outside the derived table.
+type outsideBind struct {
+	fks []fkCol
+}
+
+// orderCol is the row_number alias. It is also written into the JSON object so the
+// result can be sorted after MariaDB's json_arrayagg, which does not keep ORDER BY.
+const orderCol = "mfkord"
+
+func relationNeedsOrd(mode string, cfg *relation.Config) bool {
+	if mode == relation.ModeFirst {
+		return true
+	}
+	if cfg == nil {
+		return false
+	}
+	return cfg.Limit != nil || cfg.Offset != nil || len(cfg.Order.Items) > 0
+}
+
 type throughLink struct {
 	sqlName string
 	alias   string
@@ -92,7 +114,7 @@ func (q *rqb) add(cs ...sql.Chunk) {
 	q.chunks = append(q.chunks, cs...)
 }
 
-func (q *rqb) collect(table *relation.Table, cfg *relation.Config, mode string, depth int, relWhere *sql.SQL, link *throughLink) (relation.Selection, error) {
+func (q *rqb) collect(table *relation.Table, cfg *relation.Config, mode string, depth int, relWhere *sql.SQL, link *throughLink, outside *outsideBind) (relation.Selection, error) {
 	if cfg == nil {
 		cfg = &relation.Config{}
 	}
@@ -107,7 +129,7 @@ func (q *rqb) collect(table *relation.Table, cfg *relation.Config, mode string, 
 		return relation.Selection{}, err
 	}
 	limit := cfg.Limit
-	if mode == relation.ModeFirst {
+	if mode == relation.ModeFirst && outside == nil {
 		one := 1
 		limit = &one
 	}
@@ -161,16 +183,114 @@ func (q *rqb) collect(table *relation.Table, cfg *relation.Config, mode string, 
 	}
 	for _, w := range cfg.With {
 		sep()
-		q.add(sql.Identifier(w.Name), sql.Fragment(rqbRelField), sql.Identifier(w.Name))
+		rel, _ := table.Relation(w.Name)
+		target, ok := q.schema.Get(rel.Target)
+		if !ok {
+			return relation.Selection{}, fmt.Errorf("relation: table %q is not in the schema", rel.Target)
+		}
+		childAlias := fmt.Sprintf("d%d", depth+1)
+		throughAlias := ""
+		var childLink *throughLink
+		if rel.Through != nil {
+			junction, ok := q.schema.Get(rel.Through.Table)
+			if !ok {
+				return relation.Selection{}, fmt.Errorf("relation: table %q is not in the schema", rel.Through.Table)
+			}
+			throughAlias = fmt.Sprintf("tr%d", depth)
+			childLink = &throughLink{sqlName: junction.SQLName, alias: throughAlias}
+		}
+		on, innerWhere, outerWhere, fks, err := q.relationBind(table, alias, rel, childAlias, throughAlias)
+		if err != nil {
+			return relation.Selection{}, err
+		}
+		if childLink != nil {
+			childLink.on = on
+		}
+		childMode := relation.ModeMany
+		if rel.Kind == relation.KindOne {
+			childMode = relation.ModeFirst
+		}
+		childCfg := w.Query
+		if childCfg == nil {
+			childCfg = &relation.Config{}
+		}
+		q.add(sql.Fragment("(select "))
+		jsonAt := len(q.chunks)
+		q.add(sql.Raw(""))
+		q.add(sql.Fragment(" from ("))
+		inner, err := q.collect(target, childCfg, childMode, depth+1, innerWhere, childLink, &outsideBind{fks: fks})
+		if err != nil {
+			return relation.Selection{}, err
+		}
+		expr, err := jsonExpr(inner, rel.Kind == relation.KindMany, rel.Kind == relation.KindMany && relationNeedsOrd(childMode, childCfg))
+		if err != nil {
+			return relation.Selection{}, err
+		}
+		q.chunks[jsonAt] = expr
+		q.add(sql.Fragment(") as "), sql.Identifier("t"), sql.Fragment(" where "))
+		for i, fk := range fks {
+			if i > 0 {
+				q.add(sql.Fragment(" and "))
+			}
+			q.add(fk.outer, sql.Fragment(" = "), sql.Identifier(fk.alias))
+		}
+		if outerWhere != nil {
+			q.add(sql.Fragment(" and "), outerWhere)
+		}
+		if childMode == relation.ModeFirst {
+			q.add(sql.Fragment(" and "), sql.Identifier(orderCol), sql.Fragment(" = 1"))
+		} else if relationNeedsOrd(childMode, childCfg) {
+			if childCfg.Offset != nil {
+				q.add(sql.Fragment(" and "), sql.Identifier(orderCol), sql.Fragment(" > "), sql.NewParam(*childCfg.Offset, nil))
+			}
+			if childCfg.Limit != nil {
+				hi := *childCfg.Limit
+				if childCfg.Offset != nil {
+					hi += *childCfg.Offset
+				}
+				q.add(sql.Fragment(" and "), sql.Identifier(orderCol), sql.Fragment(" <= "), sql.NewParam(hi, nil))
+			}
+			q.add(sql.Fragment(" order by "), sql.Identifier(orderCol))
+		}
+		q.add(sql.Fragment(") as "), sql.Identifier(rel.Name))
+		sel.Rels = append(sel.Rels, relation.RelSelection{
+			Name:   rel.Name,
+			Target: rel.Target,
+			Many:   rel.Kind == relation.KindMany,
+			Inner:  inner,
+		})
 	}
 	if !wrote {
 		return relation.Selection{}, relation.NoFields(table.Name)
 	}
-	if depth > 0 && mode == relation.ModeMany && orderSQL != nil {
-		q.add(sql.Fragment(", row_number() over (order by "), orderSQL, sql.Fragment(")"))
+	if outside != nil {
+		for _, fk := range outside.fks {
+			q.add(sql.Fragment(", "), fk.inner, sql.Fragment(" as "), sql.Identifier(fk.alias))
+		}
+		if relationNeedsOrd(mode, cfg) {
+			q.add(sql.Fragment(", row_number() over (partition by "))
+			for i, fk := range outside.fks {
+				if i > 0 {
+					q.add(sql.Fragment(", "))
+				}
+				q.add(fk.inner)
+			}
+			q.add(sql.Fragment(" order by "))
+			if orderSQL != nil {
+				q.add(orderSQL)
+			} else {
+				for i, fk := range outside.fks {
+					if i > 0 {
+						q.add(sql.Fragment(", "))
+					}
+					q.add(fk.inner)
+				}
+			}
+			q.add(sql.Fragment(") as "), sql.Identifier(orderCol))
+		}
 	}
 
-	wrap := mysqlShouldWrap(q.strategy, len(cfg.With), hasRel, limit, cfg.Offset, orderSQL != nil)
+	wrap := outside == nil && mysqlShouldWrap(q.strategy, len(cfg.With), hasRel, limit, cfg.Offset, orderSQL != nil)
 	q.add(sql.Fragment(" from "))
 	if wrap {
 		q.add(sql.Fragment("(select "), sql.Identifier(alias), sql.Fragment(".* from "))
@@ -190,57 +310,11 @@ func (q *rqb) collect(table *relation.Table, cfg *relation.Config, mode string, 
 		q.add(sql.Fragment(") as "), sql.Identifier(alias))
 	}
 
-	for _, w := range cfg.With {
-		rel, _ := table.Relation(w.Name)
-		target, ok := q.schema.Get(rel.Target)
-		if !ok {
-			return relation.Selection{}, fmt.Errorf("relation: table %q is not in the schema", rel.Target)
+	if outside != nil {
+		if where != nil {
+			q.add(sql.Fragment(" where "), where)
 		}
-		childAlias := fmt.Sprintf("d%d", depth+1)
-		throughAlias := ""
-		var childLink *throughLink
-		if rel.Through != nil {
-			junction, ok := q.schema.Get(rel.Through.Table)
-			if !ok {
-				return relation.Selection{}, fmt.Errorf("relation: table %q is not in the schema", rel.Through.Table)
-			}
-			throughAlias = fmt.Sprintf("tr%d", depth)
-			childLink = &throughLink{sqlName: junction.SQLName, alias: throughAlias}
-		}
-		cond, on, err := q.relationCond(table, alias, rel, childAlias, throughAlias)
-		if err != nil {
-			return relation.Selection{}, err
-		}
-		if childLink != nil {
-			childLink.on = on
-		}
-		childMode := relation.ModeMany
-		if rel.Kind == relation.KindOne {
-			childMode = relation.ModeFirst
-		}
-		q.add(sql.Fragment(rqbJoinOpen))
-		jsonAt := len(q.chunks)
-		q.add(sql.Raw(""))
-		q.add(sql.Fragment(rqbJoinFrom))
-		inner, err := q.collect(target, w.Query, childMode, depth+1, cond, childLink)
-		if err != nil {
-			return relation.Selection{}, err
-		}
-		expr, err := jsonExpr(inner, rel.Kind == relation.KindMany)
-		if err != nil {
-			return relation.Selection{}, err
-		}
-		q.chunks[jsonAt] = expr
-		q.add(sql.Fragment(rqbJoinEnd), sql.Identifier(rel.Name), sql.Fragment(rqbOnTrue))
-		sel.Rels = append(sel.Rels, relation.RelSelection{
-			Name:   rel.Name,
-			Target: rel.Target,
-			Many:   rel.Kind == relation.KindMany,
-			Inner:  inner,
-		})
-	}
-
-	if !wrap {
+	} else if !wrap {
 		if where != nil {
 			q.add(sql.Fragment(" where "), where)
 		}
@@ -269,7 +343,7 @@ func (q *rqb) writeLimit(limit, offset *int) {
 	}
 }
 
-func jsonExpr(sel relation.Selection, many bool) (sql.Chunk, error) {
+func jsonExpr(sel relation.Selection, many, withOrd bool) (sql.Chunk, error) {
 	keys := make([]string, 0, len(sel.Columns)+len(sel.Extras)+len(sel.Rels))
 	keys = append(keys, sel.Columns...)
 	for _, ex := range sel.Extras {
@@ -294,7 +368,14 @@ func jsonExpr(sel relation.Selection, many bool) (sql.Chunk, error) {
 		}
 		b.WriteString(d.EscapeString(key))
 		b.WriteString(", ")
+		// A relation column is the JSON value of a scalar subquery. Both MySQL and MariaDB embed it.
 		b.WriteString(d.EscapeName(key))
+	}
+	if withOrd {
+		b.WriteString(", ")
+		b.WriteString(d.EscapeString(orderCol))
+		b.WriteString(", ")
+		b.WriteString(d.EscapeName(orderCol))
 	}
 	if many {
 		b.WriteString(")), json_array())")

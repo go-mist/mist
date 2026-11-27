@@ -125,6 +125,12 @@ func writeTable(b *strings.Builder, t table) {
 		fmt.Fprintf(b, "t.%s", c.field)
 	}
 	b.WriteString("}\n}\n\n")
+	fmt.Fprintf(b, "// As copies this table and uses name as its identifier. Each column reference uses the same name.\n")
+	fmt.Fprintf(b, "func (t %s) As(name string) %s {\n\tt.SQLName = name\n", st, st)
+	for _, c := range t.cols {
+		fmt.Fprintf(b, "\tt.%s.Table = name\n", c.field)
+	}
+	b.WriteString("\treturn t\n}\n\n")
 	writePrimaryKey(b, st, t.primary)
 	writeIndexes(b, q, st, t.indexes)
 	writeChecks(b, q, st, t.checks)

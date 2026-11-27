@@ -11,7 +11,7 @@ import (
 )
 
 // ReadSQLite reads tables in the current database file.
-// The migration bookkeeping tables __drizzle_migrations and __drizzle_lock are skipped.
+// The migration bookkeeping tables __mist_migrations and __mist_lock are skipped.
 // A CHECK or an expression index returns an error, so diff does not treat it as absent.
 func ReadSQLite(ctx context.Context, q Querier) (schema.Schema, error) {
 	if q == nil {

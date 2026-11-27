@@ -2,13 +2,14 @@
 //
 // A nil Logger writes nothing. Default writes one line,
 // "Query: <sql> -- params: [...]". Nop is the explicit no-op.
-// Slow queries and tracing are not this package.
+// DurationLogger is optional. Timed writes the query line and a duration line.
 package logger
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Logger receives the SQL text and the bound parameters before the driver runs them.
@@ -54,6 +55,45 @@ func Log(l Logger, query string, params []any) {
 		return
 	}
 	l.LogQuery(query, params)
+}
+
+// DurationLogger is an optional addition to Logger.
+// A logger that implements it receives the elapsed time after the driver returns, including when the call fails.
+type DurationLogger interface {
+	LogDuration(query string, params []any, elapsed time.Duration)
+}
+
+// Timed writes the query line and a duration line.
+type Timed struct {
+	Writer LogWriter
+}
+
+// LogQuery writes the same line as Default.
+func (t Timed) LogQuery(query string, params []any) {
+	Default{Writer: t.Writer}.LogQuery(query, params)
+}
+
+// LogDuration writes "Duration: <elapsed> Query: <sql>".
+func (t Timed) LogDuration(query string, params []any, elapsed time.Duration) {
+	w := t.Writer
+	if w == nil {
+		w = ConsoleWriter{}
+	}
+	w.Write("Duration: " + elapsed.String() + " Query: " + query + formatParams(params))
+}
+
+// Start writes the query line and returns a function that records the elapsed time.
+// The returned function is safe to defer. A nil logger and a logger without LogDuration do not record a duration.
+func Start(l Logger, query string, params []any) func() {
+	Log(l, query, params)
+	d, ok := l.(DurationLogger)
+	if l == nil || !ok {
+		return func() {}
+	}
+	began := time.Now()
+	return func() {
+		d.LogDuration(query, params, time.Since(began))
+	}
 }
 
 func formatParams(params []any) string {

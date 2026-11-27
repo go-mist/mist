@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.0 — 2026-11-27
+
+`migrate.Down` rolls back the latest applied migration. `migrate.DownTo` rolls back every applied migration newer than the named directory. An empty name rolls all of them back. `down.sql` is handwritten. A placeholder file is refused. Each down migration runs in its own transaction. `mist down` is the command.
+
+The default migration table is now `mist.__mist_migrations`. v0.1.0 recorded applied migrations in `drizzle.__drizzle_migrations`. Set `Config.Schema` to `drizzle` and `Config.Table` to `__drizzle_migrations` to keep reading that table. The lock table is `__mist_lock`.
+
+`Update` and `Delete` refuse to execute without `Where`. `AllRows` is the explicit full-table write. `Version` adds the increment and the comparison, and zero rows changed is `query.ErrVersionConflict`. `PreparedInsert.ExecBatch` repeats one prepared insert. `id.NewSnowflake` and `id.NewUUID` make values for `Values`. Generated tables have `As`. `logger.Timed` records driver elapsed time.
+
+`page.Fetch` takes `page.Request` (`current`, `size`) and returns `page.Result` (`records`, `total`, `size`, `current`, `pages`). It runs `Select.RowCount`, then the same select with `limit` and `offset`. `NoCount` skips the count. `FetchAfter` continues after the last value of one ordered column and does not count. It does not parse SQL.
+
+`dm.FindMany` loads `one`, `many`, and `through`. Dameng on the tested server has no `LATERAL` and no `JSON_ARRAYAGG`. Nested JSON is concatenated and collected with `LISTAGG`.
+
+`mysql.FindMany` is a correlated subquery with `json_arrayagg`. The parent key is matched outside the derived table, which current MariaDB accepts. Ordered arrays are sorted from the `mfkord` value after the query returns.
+
+Generate, encode, scan, and relation-filter errors that can name a column include the table, the column, and the expected type. Connect errors and migration-directory errors do not invent a table name.
+
 ## v0.1.0 — 2026-11-25
 
 First tagged release of `github.com/go-mist/mist`. Versions before 1.0.0 can still change the API.

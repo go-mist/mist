@@ -464,7 +464,7 @@ func (g *loader) parseTag(fileName string, line int, field string, expr ast.Expr
 	if sqlType == "" {
 		sqlType, err = inferSQL(goType)
 		if err != nil {
-			return column{}, g.err(fileName, line, "field %s tag must be name,type", field)
+			return column{}, g.err(fileName, line, "field %s: %s; expected int64, int32, int16, string, bool, time.Time, or []byte, or an explicit type in the tag", field, err.Error())
 		}
 	}
 	col := column{
@@ -809,41 +809,41 @@ func (g *loader) checkTableConstraints(t *table, columnPKs int) {
 	seenPK := map[string]struct{}{}
 	for _, name := range t.primary {
 		if _, ok := names[name]; !ok {
-			g.fail(t.file, t.line, "PrimaryKey column %s was not found", name)
+			g.fail(t.file, t.line, "table %s PrimaryKey column %s was not found", t.sqlName, name)
 		}
 		if _, ok := seenPK[name]; ok {
-			g.fail(t.file, t.line, "PrimaryKey column %s is duplicated", name)
+			g.fail(t.file, t.line, "table %s PrimaryKey column %s is duplicated", t.sqlName, name)
 		}
 		seenPK[name] = struct{}{}
 	}
 	seenIdx := map[string]struct{}{}
 	for _, idx := range t.indexes {
 		if idx.name == "" {
-			g.fail(t.file, t.line, "index is missing a name")
+			g.fail(t.file, t.line, "table %s index is missing a name", t.sqlName)
 		}
 		if _, ok := seenIdx[idx.name]; ok {
-			g.fail(t.file, t.line, "index name %s is duplicated", idx.name)
+			g.fail(t.file, t.line, "table %s index name %s is duplicated", t.sqlName, idx.name)
 		}
 		seenIdx[idx.name] = struct{}{}
 		if len(idx.columns) == 0 {
-			g.fail(t.file, t.line, "index %s is missing columns", idx.name)
+			g.fail(t.file, t.line, "table %s index %s is missing columns", t.sqlName, idx.name)
 		}
 		for _, name := range idx.columns {
 			if _, ok := names[name]; !ok {
-				g.fail(t.file, t.line, "index %s: column %s was not found", idx.name, name)
+				g.fail(t.file, t.line, "table %s index %s: column %s was not found", t.sqlName, idx.name, name)
 			}
 		}
 	}
 	seenCheck := map[string]struct{}{}
 	for _, chk := range t.checks {
 		if chk.name == "" {
-			g.fail(t.file, t.line, "CHECK is missing a name")
+			g.fail(t.file, t.line, "table %s CHECK is missing a name", t.sqlName)
 		}
 		if chk.expr == "" {
-			g.fail(t.file, t.line, "CHECK %s is missing an expression", chk.name)
+			g.fail(t.file, t.line, "table %s CHECK %s is missing an expression", t.sqlName, chk.name)
 		}
 		if _, ok := seenCheck[chk.name]; ok {
-			g.fail(t.file, t.line, "CHECK name %s is duplicated", chk.name)
+			g.fail(t.file, t.line, "table %s CHECK name %s is duplicated", t.sqlName, chk.name)
 		}
 		seenCheck[chk.name] = struct{}{}
 	}

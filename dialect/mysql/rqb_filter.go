@@ -111,7 +111,7 @@ func fieldFilter(table *relation.Table, alias string, f relation.Filter) (*sql.S
 	case "notBetween":
 		return op.NotBetween(ref, f.Value, f.Value2), nil
 	default:
-		return nil, fmt.Errorf("relation: unknown comparison %q", f.Op)
+		return nil, fmt.Errorf("relation: table %s column %s: unknown comparison %q; expected eq, ne, gt, gte, lt, lte, like, ilike, notLike, notIlike, isNull, isNotNull, in, notIn, between, or notBetween", table.Name, f.Column, f.Op)
 	}
 }
 
@@ -164,6 +164,60 @@ func (q *rqb) relFilter(table *relation.Table, alias string, f relation.Filter, 
 	}
 	parts = append(parts, sql.Fragment(" where "), where, sql.Fragment(")"))
 	return sql.S(parts...), true, nil
+}
+
+// relationBind splits a relation match so the parent columns stay outside the derived table.
+// innerWhere references only the child. outerWhere references only the parent. on is the junction join.
+func (q *rqb) relationBind(src *relation.Table, srcAlias string, rel relation.Relation, dstAlias, throughAlias string) (on, innerWhere, outerWhere *sql.SQL, fks []fkCol, err error) {
+	if rel.Through != nil && throughAlias == "" {
+		return nil, nil, nil, nil, fmt.Errorf("relation: relation %q through is missing an alias", rel.Name)
+	}
+	if len(rel.From) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("relation: relation %q is missing columns", rel.Name)
+	}
+	fks = make([]fkCol, len(rel.From))
+	for i := range rel.From {
+		var inner *sql.SQL
+		if rel.Through == nil {
+			inner = colRef(dstAlias, rel.To[i])
+		} else {
+			inner = colRef(throughAlias, rel.Through.From[i])
+		}
+		fks[i] = fkCol{
+			inner: inner,
+			outer: colRef(srcAlias, rel.From[i]),
+			alias: fmt.Sprintf("mfk%d", i),
+		}
+	}
+	if rel.Through != nil {
+		onParts := make([]sql.Chunk, 0, len(rel.To))
+		for i := range rel.To {
+			onParts = append(onParts, op.Eq(colRef(throughAlias, rel.Through.To[i]), colRef(dstAlias, rel.To[i])))
+		}
+		on = sql.And(onParts...)
+	}
+	if rel.Where != nil {
+		wtable := src
+		walias := srcAlias
+		if !rel.Reversed {
+			var ok bool
+			wtable, ok = q.schema.Get(rel.Target)
+			if !ok {
+				return nil, nil, nil, nil, fmt.Errorf("relation: table %q is not in the schema", rel.Target)
+			}
+			walias = dstAlias
+		}
+		w, _, err := q.compileFilter(wtable, walias, *rel.Where, 0)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		if rel.Reversed {
+			outerWhere = w
+		} else {
+			innerWhere = w
+		}
+	}
+	return on, innerWhere, outerWhere, fks, nil
 }
 
 func (q *rqb) relationCond(src *relation.Table, srcAlias string, rel relation.Relation, dstAlias, throughAlias string) (where, on *sql.SQL, err error) {

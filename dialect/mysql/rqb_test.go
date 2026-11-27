@@ -12,7 +12,7 @@ import (
 func TestRelationalSQL(t *testing.T) {
 	s := rqbSchema(t)
 	postsJSON := `coalesce(json_arrayagg(json_object('id', ` + "`id`" + `, 'title', ` + "`title`" + `, 'author_id', ` + "`author_id`" + `)), json_array())`
-	postsJoin := ` left join lateral(select ` + postsJSON + ` as ` + "`r`" + ` from (select ` + "`d1`" + `.` + "`id`" + ` as ` + "`id`" + `, ` + "`d1`" + `.` + "`title`" + ` as ` + "`title`" + `, ` + "`d1`" + `.` + "`author_id`" + ` as ` + "`author_id`" + ` from ` + "`posts`" + ` as ` + "`d1`" + ` where ` + "`d0`" + `.` + "`id`" + ` = ` + "`d1`" + `.` + "`author_id`" + `) as ` + "`t`" + `) as ` + "`posts`" + ` on true`
+	postsSub := ` (select ` + postsJSON + ` from (select ` + "`d1`" + `.` + "`id`" + ` as ` + "`id`" + `, ` + "`d1`" + `.` + "`title`" + ` as ` + "`title`" + `, ` + "`d1`" + `.` + "`author_id`" + ` as ` + "`author_id`" + `, ` + "`d1`" + `.` + "`author_id`" + ` as ` + "`mfk0`" + ` from ` + "`posts`" + ` as ` + "`d1`" + `) as ` + "`t`" + ` where ` + "`d0`" + `.` + "`id`" + ` = ` + "`mfk0`" + `) as ` + "`posts`"
 	cases := []struct {
 		name   string
 		table  string
@@ -31,15 +31,14 @@ func TestRelationalSQL(t *testing.T) {
 					Name: "comments",
 				}}},
 			}}},
-			sql: "select `d0`.`id` as `id`, `d0`.`name` as `name`, `posts`.`r` as `posts` from `users` as `d0` left join lateral(select coalesce(json_arrayagg(json_object('id', `id`, 'title', `title`, 'author_id', `author_id`, 'comments', `comments`)), json_array()) as `r` from (select `d1`.`id` as `id`, `d1`.`title` as `title`, `d1`.`author_id` as `author_id`, `comments`.`r` as `comments` from `posts` as `d1` left join lateral(select coalesce(json_arrayagg(json_object('id', `id`, 'body', `body`, 'post_id', `post_id`)), json_array()) as `r` from (select `d2`.`id` as `id`, `d2`.`body` as `body`, `d2`.`post_id` as `post_id` from `comments` as `d2` where `d1`.`id` = `d2`.`post_id`) as `t`) as `comments` on true where `d0`.`id` = `d1`.`author_id`) as `t`) as `posts` on true",
+			sql: "select `d0`.`id` as `id`, `d0`.`name` as `name`, (select coalesce(json_arrayagg(json_object('id', `id`, 'title', `title`, 'author_id', `author_id`, 'comments', `comments`)), json_array()) from (select `d1`.`id` as `id`, `d1`.`title` as `title`, `d1`.`author_id` as `author_id`, (select coalesce(json_arrayagg(json_object('id', `id`, 'body', `body`, 'post_id', `post_id`)), json_array()) from (select `d2`.`id` as `id`, `d2`.`body` as `body`, `d2`.`post_id` as `post_id`, `d2`.`post_id` as `mfk0` from `comments` as `d2`) as `t` where `d1`.`id` = `mfk0`) as `comments`, `d1`.`author_id` as `mfk0` from `posts` as `d1`) as `t` where `d0`.`id` = `mfk0`) as `posts` from `users` as `d0`",
 		},
 		{
-			name:   "one",
-			table:  "posts",
-			mode:   relation.ModeMany,
-			cfg:    relation.Config{With: []relation.With{{Name: "author"}}},
-			sql:    "select `d0`.`id` as `id`, `d0`.`title` as `title`, `d0`.`author_id` as `author_id`, `author`.`r` as `author` from `posts` as `d0` left join lateral(select json_object('id', `id`, 'name', `name`) as `r` from (select `d1`.`id` as `id`, `d1`.`name` as `name` from `users` as `d1` where `d0`.`author_id` = `d1`.`id` limit ?) as `t`) as `author` on true",
-			params: []any{1},
+			name:  "one",
+			table: "posts",
+			mode:  relation.ModeMany,
+			cfg:   relation.Config{With: []relation.With{{Name: "author"}}},
+			sql:   "select `d0`.`id` as `id`, `d0`.`title` as `title`, `d0`.`author_id` as `author_id`, (select json_object('id', `id`, 'name', `name`) from (select `d1`.`id` as `id`, `d1`.`name` as `name`, `d1`.`id` as `mfk0`, row_number() over (partition by `d1`.`id` order by `d1`.`id`) as `mfkord` from `users` as `d1`) as `t` where `d0`.`author_id` = `mfk0` and `mfkord` = 1) as `author` from `posts` as `d0`",
 		},
 		{
 			name:  "nested limit",
@@ -53,8 +52,8 @@ func TestRelationalSQL(t *testing.T) {
 					Offset: relation.Int(1),
 				},
 			}}},
-			sql:    "select `d0`.`id` as `id`, `d0`.`name` as `name`, `posts`.`r` as `posts` from `users` as `d0` left join lateral(select coalesce(json_arrayagg(json_object('id', `id`, 'title', `title`, 'author_id', `author_id`)), json_array()) as `r` from (select `d1`.`id` as `id`, `d1`.`title` as `title`, `d1`.`author_id` as `author_id`, row_number() over (order by `d1`.`id` desc) from `posts` as `d1` where `d0`.`id` = `d1`.`author_id` order by `d1`.`id` desc limit ? offset ?) as `t`) as `posts` on true",
-			params: []any{2, 1},
+			sql:    "select `d0`.`id` as `id`, `d0`.`name` as `name`, (select coalesce(json_arrayagg(json_object('id', `id`, 'title', `title`, 'author_id', `author_id`, 'mfkord', `mfkord`)), json_array()) from (select `d1`.`id` as `id`, `d1`.`title` as `title`, `d1`.`author_id` as `author_id`, `d1`.`author_id` as `mfk0`, row_number() over (partition by `d1`.`author_id` order by `d1`.`id` desc) as `mfkord` from `posts` as `d1`) as `t` where `d0`.`id` = `mfk0` and `mfkord` > ? and `mfkord` <= ? order by `mfkord`) as `posts` from `users` as `d0`",
+			params: []any{1, 3},
 		},
 		{
 			name:  "root page",
@@ -66,7 +65,7 @@ func TestRelationalSQL(t *testing.T) {
 				Limit:  relation.Int(10),
 				Offset: relation.Int(5),
 			},
-			sql:    "select `d0`.`id` as `id`, `d0`.`name` as `name`, `posts`.`r` as `posts` from (select `d0`.* from `users` as `d0` order by `d0`.`id` asc limit ? offset ?) as `d0`" + postsJoin + " order by `d0`.`id` asc",
+			sql:    "select `d0`.`id` as `id`, `d0`.`name` as `name`," + postsSub + " from (select `d0`.* from `users` as `d0` order by `d0`.`id` asc limit ? offset ?) as `d0` order by `d0`.`id` asc",
 			params: []any{10, 5},
 		},
 		{
@@ -77,7 +76,7 @@ func TestRelationalSQL(t *testing.T) {
 				With:  []relation.With{{Name: "posts"}},
 				Where: relation.Exists("posts"),
 			},
-			sql: "select `d0`.`id` as `id`, `d0`.`name` as `name`, `posts`.`r` as `posts` from `users` as `d0`" + postsJoin + " where exists (select * from `posts` as `f0` where `d0`.`id` = `f0`.`author_id`)",
+			sql: "select `d0`.`id` as `id`, `d0`.`name` as `name`," + postsSub + " from `users` as `d0` where exists (select * from `posts` as `f0` where `d0`.`id` = `f0`.`author_id`)",
 		},
 		{
 			name:   "ilike",
@@ -108,7 +107,7 @@ func TestRelationalSQL(t *testing.T) {
 
 func TestRelationalThroughSQL(t *testing.T) {
 	members := throughSchema(t)
-	withSQL := "select `d0`.`id` as `id`, `d0`.`name` as `name`, `groups`.`r` as `groups` from `users` as `d0` left join lateral(select coalesce(json_arrayagg(json_object('id', `id`, 'name', `name`)), json_array()) as `r` from (select `d1`.`id` as `id`, `d1`.`name` as `name` from `groups` as `d1` inner join `members` as `tr0` on `tr0`.`group_id` = `d1`.`id` where `d0`.`id` = `tr0`.`user_id`) as `t`) as `groups` on true"
+	withSQL := "select `d0`.`id` as `id`, `d0`.`name` as `name`, (select coalesce(json_arrayagg(json_object('id', `id`, 'name', `name`)), json_array()) from (select `d1`.`id` as `id`, `d1`.`name` as `name`, `tr0`.`user_id` as `mfk0` from `groups` as `d1` inner join `members` as `tr0` on `tr0`.`group_id` = `d1`.`id`) as `t` where `d0`.`id` = `mfk0`) as `groups` from `users` as `d0`"
 	cases := []struct {
 		name string
 		cfg  relation.Config
@@ -161,7 +160,7 @@ func TestRelationalJSONCastSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := mustRQB(t, s, "parents", relation.Config{With: []relation.With{{Name: "kids"}}}, relation.ModeMany)
-	want := "select `d0`.`id` as `id`, `kids`.`r` as `kids` from `parents` as `d0` left join lateral(select coalesce(json_arrayagg(json_object('id', `id`, 'parent_id', `parent_id`, 'amount', `amount`, 'n', `n`)), json_array()) as `r` from (select `d1`.`id` as `id`, `d1`.`parent_id` as `parent_id`, cast(`d1`.`amount` as char) as `amount`, cast(`d1`.`n` as char) as `n` from `kids` as `d1` where `d0`.`id` = `d1`.`parent_id`) as `t`) as `kids` on true"
+	want := "select `d0`.`id` as `id`, (select coalesce(json_arrayagg(json_object('id', `id`, 'parent_id', `parent_id`, 'amount', `amount`, 'n', `n`)), json_array()) from (select `d1`.`id` as `id`, `d1`.`parent_id` as `parent_id`, cast(`d1`.`amount` as char) as `amount`, cast(`d1`.`n` as char) as `n`, `d1`.`parent_id` as `mfk0` from `kids` as `d1`) as `t` where `d0`.`id` = `mfk0`) as `kids` from `parents` as `d0`"
 	if got.SQL != want {
 		t.Fatalf("sql\n%s\nwant\n%s", got.SQL, want)
 	}

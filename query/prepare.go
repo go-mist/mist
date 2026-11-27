@@ -150,6 +150,20 @@ func (p *PreparedInsert[T]) Exec(ctx context.Context, values map[string]any) (in
 	return execPrepared(ctx, &p.statement, p.returning, values)
 }
 
+// ExecBatch executes the prepared insert once per row, in order.
+// It stops at the first error. Earlier executions stay applied. Use a transaction when the batch must be all or nothing.
+func (p *PreparedInsert[T]) ExecBatch(ctx context.Context, rows []map[string]any) (int64, error) {
+	var n int64
+	for _, row := range rows {
+		affected, err := p.Exec(ctx, row)
+		n += affected
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
 // All executes an insert with RETURNING or OUTPUT.
 func (p *PreparedInsert[T]) All(ctx context.Context, values map[string]any) ([]T, error) {
 	if p.outputSet {
@@ -185,10 +199,17 @@ type PreparedUpdate[T any] struct {
 	returning []Column[T]
 	output    []Column[T]
 	outputSet bool
+	version   bool
 }
 
 // Prepare renders this update and registers the statement with the driver.
 func (u Update[T]) Prepare(ctx context.Context, db Executor) (*PreparedUpdate[T], error) {
+	if err := u.guardWhere(); err != nil {
+		return nil, err
+	}
+	if err := u.versionColumn(); err != nil {
+		return nil, err
+	}
 	st, err := prepareQuery(ctx, db, func() (*sql.SQL, error) {
 		return db.BuildUpdateQuery(u.Spec())
 	})
@@ -202,6 +223,7 @@ func (u Update[T]) Prepare(ctx context.Context, db Executor) (*PreparedUpdate[T]
 		returning: append([]Column[T](nil), u.returning...),
 		output:    out,
 		outputSet: u.outputInsertedSet || u.outputDeletedSet,
+		version:   u.versionSet,
 	}, nil
 }
 
@@ -210,36 +232,58 @@ func (p *PreparedUpdate[T]) Exec(ctx context.Context, values map[string]any) (in
 	if p.outputSet {
 		return 0, errors.New("query: use All or One when output is set")
 	}
-	return execPrepared(ctx, &p.statement, p.returning, values)
+	n, err := execPrepared(ctx, &p.statement, p.returning, values)
+	return versionAffected(p.version, n, err)
 }
 
 // All executes an update with RETURNING or OUTPUT.
 func (p *PreparedUpdate[T]) All(ctx context.Context, values map[string]any) ([]T, error) {
+	var (
+		rows []T
+		err  error
+	)
 	if p.outputSet {
 		if len(p.output) == 0 {
 			return nil, errors.New("query: output is missing columns")
 		}
-		return allPrepared(ctx, &p.statement, p.output, values)
+		rows, err = allPrepared(ctx, &p.statement, p.output, values)
+	} else {
+		if len(p.returning) == 0 {
+			return nil, errors.New("query: update has no returning")
+		}
+		rows, err = allPrepared(ctx, &p.statement, p.returning, values)
 	}
-	if len(p.returning) == 0 {
-		return nil, errors.New("query: update has no returning")
+	if err != nil {
+		return nil, err
 	}
-	return allPrepared(ctx, &p.statement, p.returning, values)
+	if p.version && len(rows) == 0 {
+		return nil, ErrVersionConflict
+	}
+	return rows, nil
 }
 
 // One executes an update with RETURNING or OUTPUT and requires exactly one row.
 func (p *PreparedUpdate[T]) One(ctx context.Context, values map[string]any) (T, error) {
 	var zero T
+	var (
+		row T
+		err error
+	)
 	if p.outputSet {
 		if len(p.output) == 0 {
 			return zero, errors.New("query: output is missing columns")
 		}
-		return onePrepared(ctx, &p.statement, p.output, values)
+		row, err = onePrepared(ctx, &p.statement, p.output, values)
+	} else {
+		if len(p.returning) == 0 {
+			return zero, errors.New("query: update has no returning")
+		}
+		row, err = onePrepared(ctx, &p.statement, p.returning, values)
 	}
-	if len(p.returning) == 0 {
-		return zero, errors.New("query: update has no returning")
+	if p.version && errors.Is(err, ErrNoRows) {
+		return zero, ErrVersionConflict
 	}
-	return onePrepared(ctx, &p.statement, p.returning, values)
+	return row, err
 }
 
 // PreparedDelete is a delete rendered once.
@@ -252,6 +296,9 @@ type PreparedDelete[T any] struct {
 
 // Prepare renders this delete and registers the statement with the driver.
 func (d Delete[T]) Prepare(ctx context.Context, db Executor) (*PreparedDelete[T], error) {
+	if err := d.guardWhere(); err != nil {
+		return nil, err
+	}
 	st, err := prepareQuery(ctx, db, func() (*sql.SQL, error) {
 		return db.BuildDeleteQuery(d.Spec())
 	})

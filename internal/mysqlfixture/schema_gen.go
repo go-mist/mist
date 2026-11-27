@@ -38,6 +38,19 @@ func (t noteTable) Columns() []sql.Chunk {
 	return []sql.Chunk{t.ID, t.Title, t.Body, t.Amount, t.At, t.Payload, t.Flag}
 }
 
+// As copies this table and uses name as its identifier. Each column reference uses the same name.
+func (t noteTable) As(name string) noteTable {
+	t.SQLName = name
+	t.ID.Table = name
+	t.Title.Table = name
+	t.Body.Table = name
+	t.Amount.Table = name
+	t.At.Table = name
+	t.Payload.Table = name
+	t.Flag.Table = name
+	return t
+}
+
 func (noteTable) PrimaryKey() []string {
 	return []string{"id"}
 }

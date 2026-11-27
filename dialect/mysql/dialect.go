@@ -2,7 +2,7 @@
 //
 // Query chains still use query. This package only handles identifiers, placeholders, and the statement shape of select / insert / update / delete.
 // Syntax MySQL does not have is reported as an error, and is not rewritten into a form that only looks equivalent.
-// FindMany writes LATERAL, which current MariaDB rejects. A MariaDB JSON column reads back as longtext plus a json_valid check.
+// FindMany uses a correlated subquery and json_arrayagg. The outer column stays outside any derived table, which is the shape current MariaDB accepts. A MariaDB JSON column reads back as longtext plus a json_valid check.
 package mysql
 
 import (

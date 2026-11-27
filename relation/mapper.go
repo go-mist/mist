@@ -3,6 +3,7 @@ package relation
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 )
 
 // Fill loads relation-column JSON into the row whose scalars are already scanned.
@@ -114,12 +115,12 @@ func decodeColumn(table string, col Column, dest any, raw []byte) error {
 	dst := col.Ptr(dest)
 	if col.ReadJSON != nil {
 		if err := col.ReadJSON(dst, raw); err != nil {
-			return fmt.Errorf("relation: column %q.%q cannot be read from JSON: %w", table, col.Key, err)
+			return fmt.Errorf("relation: table %s column %s expected %s: %w", table, col.Key, pointedType(dst), err)
 		}
 		return nil
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
-		return fmt.Errorf("relation: column %q.%q cannot be read from JSON: %w", table, col.Key, err)
+		return fmt.Errorf("relation: table %s column %s expected %s: %w", table, col.Key, pointedType(dst), err)
 	}
 	return nil
 }
@@ -131,14 +132,25 @@ func decodeExtra(table string, ex SelectedExtra, dest any, raw []byte) error {
 	dst := ex.Ptr(dest)
 	if ex.ReadJSON != nil {
 		if err := ex.ReadJSON(dst, raw); err != nil {
-			return fmt.Errorf("relation: extras %q cannot be read from JSON: %w", ex.Key, err)
+			return fmt.Errorf("relation: table %s extras %s expected %s: %w", table, ex.Key, pointedType(dst), err)
 		}
 		return nil
 	}
 	if err := json.Unmarshal(raw, dst); err != nil {
-		return fmt.Errorf("relation: extras %q cannot be read from JSON: %w", ex.Key, err)
+		return fmt.Errorf("relation: table %s extras %s expected %s: %w", table, ex.Key, pointedType(dst), err)
 	}
 	return nil
+}
+
+func pointedType(dst any) string {
+	if dst == nil {
+		return "a field pointer"
+	}
+	t := reflect.TypeOf(dst)
+	if t.Kind() == reflect.Ptr && t.Elem() != nil {
+		return t.Elem().String()
+	}
+	return t.String()
 }
 
 func newRow(tab *Table) (any, error) {

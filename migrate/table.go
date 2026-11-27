@@ -3,8 +3,8 @@ package migrate
 import "fmt"
 
 const (
-	defaultSchema = "drizzle"
-	defaultTable  = "__drizzle_migrations"
+	defaultSchema = "mist"
+	defaultTable  = "__mist_migrations"
 )
 
 // CreateTableSQL is the v1 migration table. applied_at uses the database now(), and the caller does not write that value.

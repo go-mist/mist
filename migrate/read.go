@@ -16,14 +16,15 @@ import (
 // breakpoint matches the rc.5 split marker verbatim.
 const breakpoint = "--> statement-breakpoint"
 
-// UpFile is the SQL Run applies. DownFile is reserved in the same directory and is not applied or hashed.
+// UpFile is the SQL Run applies. DownFile is the SQL Down applies. The hash is the bytes of up.sql.
 const (
 	UpFile   = "up.sql"
 	DownFile = "down.sql"
 )
 
 // DownPlaceholder is the down.sql written when a migration directory is created.
-const DownPlaceholder = "-- Reserved. migrate does not apply this file.\n"
+// Down refuses to run it. Replace the file with the SQL that undoes up.sql.
+const DownPlaceholder = "-- Replace this file with the SQL that undoes up.sql.\n"
 
 // Migration is one migration on disk. Hash is computed from the raw file bytes. Splitting does not change it.
 type Migration struct {
@@ -34,7 +35,7 @@ type Migration struct {
 	FolderMillis int64
 }
 
-// Read reads a migrations directory on disk. up.sql in each subdirectory is one migration, ordered by directory name. down.sql is ignored.
+// Read reads a migrations directory on disk. up.sql in each subdirectory is one migration, ordered by directory name. down.sql is not part of the hash.
 // The first 14 characters of the directory name are a UTC timestamp YYYYMMDDHHMMSS, stored in created_at.
 func Read(folder string) ([]Migration, error) {
 	if folder == "" {
@@ -44,7 +45,7 @@ func Read(folder string) ([]Migration, error) {
 }
 
 // ReadFS reads the same layout as Read from fsys. The root of fsys is the migrations directory.
-// embed.FS and os.DirFS both work. down.sql is ignored.
+// embed.FS and os.DirFS both work. down.sql is not part of the hash.
 func ReadFS(fsys fs.FS) ([]Migration, error) {
 	if fsys == nil {
 		return nil, fmt.Errorf("migrate: missing migrations directory")
@@ -114,6 +115,45 @@ func FolderMillis(name string) (int64, error) {
 		return 0, fmt.Errorf("migrate: migration directory %q has an invalid timestamp", name)
 	}
 	return got.UnixMilli(), nil
+}
+
+func downStatements(fsys fs.FS, name string) ([]string, error) {
+	file := path.Join(name, DownFile)
+	raw, err := fs.ReadFile(fsys, file)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("migrate: migration %q has no down.sql to run", name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("migrate: read %s: %w", file, err)
+	}
+	stmts := executableSQL(splitSQL(string(raw)))
+	if len(stmts) == 0 {
+		return nil, fmt.Errorf("migrate: migration %q has no down.sql to run", name)
+	}
+	return stmts, nil
+}
+
+func executableSQL(stmts []string) []string {
+	out := make([]string, 0, len(stmts))
+	for _, stmt := range stmts {
+		if strings.TrimSpace(stripLineComments(stmt)) == "" {
+			continue
+		}
+		out = append(out, stmt)
+	}
+	return out
+}
+
+func stripLineComments(stmt string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(stmt, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func splitSQL(body string) []string {

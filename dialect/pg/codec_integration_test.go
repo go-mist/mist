@@ -144,7 +144,7 @@ func TestCodecRoundTrip(t *testing.T) {
 		t.Fatalf("uid %s mood %s", got.UID, got.Mood)
 	}
 
-	_, err = pg.Update(codecRows).Set(codecAmount, (*string)(nil)).Exec(ctx, db)
+	_, err = pg.Update(codecRows).Set(codecAmount, (*string)(nil)).AllRows().Exec(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
