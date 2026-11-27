@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-11-27
 
 `migrate.Down` rolls back the latest applied migration. `migrate.DownTo` rolls back every applied migration newer than the named directory. An empty name rolls all of them back. `down.sql` is handwritten. A placeholder file is refused. Each down migration runs in its own transaction. `mist down` is the command.
+
+The default migration table is now `mist.__mist_migrations`. v0.1.0 recorded applied migrations in `drizzle.__drizzle_migrations`. Set `Config.Schema` to `drizzle` and `Config.Table` to `__drizzle_migrations` to keep reading that table. The lock table is `__mist_lock`.
 
 `Update` and `Delete` refuse to execute without `Where`. `AllRows` is the explicit full-table write. `Version` adds the increment and the comparison, and zero rows changed is `query.ErrVersionConflict`. `PreparedInsert.ExecBatch` repeats one prepared insert. `id.NewSnowflake` and `id.NewUUID` make values for `Values`. Generated tables have `As`. `logger.Timed` records driver elapsed time.
 
